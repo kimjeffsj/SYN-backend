@@ -1,8 +1,7 @@
-from typing import Dict
-
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.features.auth import router as auth_router
+from app.features.schedule import router as schedule_router
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,6 +22,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
 
 
 @app.get("/")

@@ -12,8 +12,6 @@ __pycache__/
 *.swp
 *.swo
 
-# Alembic
-alembic.ini
 
 # Don't ignore migrations
 !migrations/
