@@ -1,3 +1,21 @@
-.env
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+
+# IDE
+.idea/
 .vscode/
+*.swp
+*.swo
+
+# Alembic
+alembic.ini
+
+# Don't ignore migrations
+!migrations/
+!migrations/**/
+!migrations/**/*.py
