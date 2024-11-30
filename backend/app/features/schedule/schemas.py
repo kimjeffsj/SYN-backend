@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from app.features.schedule.models import ScheduleStatus, ShiftType
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class ScheduleBase(BaseModel):
@@ -70,9 +70,8 @@ class ScheduleSearchParams(BaseModel):
     shift_type: Optional[ShiftType] = None
     status: Optional[ScheduleStatus] = None
 
-    # @field_validator("end_date")
-    # def validate_end_date(cla, v: Optional[datetime], info):
-    #     start_date = info.date.get("start_date")
-    #     if start_date and v and v < start_date:
-    #         raise ValueError("End date must be after or equal to start date")
-    #     return v
+
+class ScheduleBulkCreateDto(BaseModel):
+    """DTO for creating multiple schedules at once"""
+
+    schedules: List[ScheduleCreate] = Field(..., min_items=1)

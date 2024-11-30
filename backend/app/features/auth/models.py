@@ -1,5 +1,6 @@
 from app.core.database import Base
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+from sqlalchemy.orm import relationship
 
 
 class User(Base):
@@ -17,6 +18,14 @@ class User(Base):
     last_password_change = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    schedules = relationship(
+        "Schedule",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="Schedule.user_id",
+    )
 
     def __repr__(self):
         return f"<User {self.id}: {self.email}>"

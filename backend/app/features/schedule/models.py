@@ -17,10 +17,10 @@ from sqlalchemy.orm import relationship
 class ShiftType(str, enum.Enum):
     """Types of work shifts"""
 
-    MORNING = "morning"  # 0900-1400
-    AFTERNOON = "afternoon"  # 1400-2200
+    MORNING = "morning"  # 0800-1600
+    AFTERNOON = "afternoon"  # 1200-2000
     EVENING = "evening"  # 1700-2200
-    FULL_DAY = "full_day"  # 0900-1700
+    FULL_DAY = "full_day"  # 0800-1800
 
 
 class ScheduleStatus(str, enum.Enum):
