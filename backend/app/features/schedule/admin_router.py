@@ -2,17 +2,18 @@ from typing import List
 
 from app.core.database import get_db
 from app.core.security import get_current_admin_user
-from app.features.auth.models import User
-from app.features.schedule.schemas import (
+from app.models.user import User
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from .schemas import (
     ScheduleBulkCreateDto,
     ScheduleCreate,
     ScheduleResponse,
     ScheduleSearchParams,
     ScheduleUpdate,
 )
-from app.features.schedule.service import ScheduleService
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from .service import ScheduleService
 
 router = APIRouter()
 

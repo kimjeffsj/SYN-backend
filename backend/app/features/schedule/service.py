@@ -1,16 +1,18 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from app.features.schedule.models import Schedule, ScheduleStatus
-from app.features.schedule.schemas import (
+from app.models.schedule import Schedule
+from app.models.schedule_enums import ScheduleStatus
+from fastapi import HTTPException, status
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
+
+from .schemas import (
     ScheduleBulkCreateDto,
     ScheduleCreate,
     ScheduleSearchParams,
     ScheduleUpdate,
 )
-from fastapi import HTTPException, status
-from sqlalchemy import and_, or_
-from sqlalchemy.orm import Session
 
 
 class RepeatPattern:

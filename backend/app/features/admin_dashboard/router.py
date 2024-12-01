@@ -1,10 +1,11 @@
 from app.core.database import get_db
 from app.core.security import get_current_active_user
-from app.features.admin_dashboard.schemas import DashboardResponse
-from app.features.admin_dashboard.service import AdminDashboardService
-from app.features.auth.models import User
+from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from .schemas import DashboardResponse
+from .service import AdminDashboardService
 
 router = APIRouter()
 
