@@ -1,6 +1,8 @@
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.features.admin_dashboard import router as admin_dashboard_router
 from app.features.auth import router as auth_router
+from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
 from fastapi import FastAPI
@@ -26,6 +28,14 @@ app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
 app.include_router(
     schedule_admin_router, prefix="/admin/schedules", tags=["admin", "schedules"]
+)
+app.include_router(
+    employee_dashboard_router,
+    prefix="/employee/dashboard",
+    tags=["dashboard"],
+)
+app.include_router(
+    admin_dashboard_router, prefix="/admin/dashboard", tags=["admin", "dashboard"]
 )
 
 
