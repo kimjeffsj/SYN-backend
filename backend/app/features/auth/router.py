@@ -1,5 +1,8 @@
+from typing import Annotated
+
 from app.core.database import get_db
-from app.core.security import get_current_active_user
+from app.core.security import get_current_active_user, get_current_user, oauth2_scheme
+from app.models import User
 from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -18,7 +21,8 @@ async def register(user_data: UserCreateSchema, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenSchema)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Session = Depends(get_db),
 ):
     """Authenticate user and return tokens"""
     user = AuthService.authenticate_user(
@@ -30,7 +34,7 @@ async def login(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """Get current user information"""
     return current_user

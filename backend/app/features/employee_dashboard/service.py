@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
-from app.features.auth.models import User
-from app.features.schedule.models import Schedule
+from app.models.schedule import Schedule
+from app.models.user import User
 from sqlalchemy.orm import Session
 
 

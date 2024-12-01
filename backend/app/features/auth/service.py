@@ -7,10 +7,10 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
+from app.models.user import User
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from .models import User
 from .schemas import LoginSchema, UserCreateSchema
 
 

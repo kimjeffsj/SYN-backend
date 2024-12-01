@@ -1,4 +1,4 @@
-from app.features.auth.models import User
+from app.models.user import User
 from sqlalchemy.orm import Session
 
 

@@ -8,9 +8,7 @@ from sqlalchemy import engine_from_config, pool
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
-from app.core.database import Base
-from app.features.auth.models import User
-from app.features.schedule.models import Schedule
+from app.models import Base, Schedule, User
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

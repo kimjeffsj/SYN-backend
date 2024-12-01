@@ -1,10 +1,11 @@
 from app.core.database import get_db
 from app.core.security import get_current_active_user
-from app.features.auth.models import User
-from app.features.employee_dashboard.models import EmployeeDashboardResponse
-from app.features.employee_dashboard.service import EmployeeDashboardService
+from app.models.user import User
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
+from .schemas import EmployeeDashboardResponse
+from .service import EmployeeDashboardService
 
 router = APIRouter()
 

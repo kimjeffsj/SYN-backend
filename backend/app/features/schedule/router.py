@@ -2,11 +2,12 @@ from typing import List
 
 from app.core.database import get_db
 from app.core.security import get_current_active_user
-from app.features.auth.models import User
-from app.features.schedule.schemas import ScheduleResponse
-from app.features.schedule.service import ScheduleService
+from app.models.user import User
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+from .schemas import ScheduleResponse
+from .service import ScheduleService
 
 router = APIRouter()
 
