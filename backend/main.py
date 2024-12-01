@@ -1,5 +1,6 @@
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.features.admin_dashboard import router as admin_dashboard_router
 from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.schedule import admin_router as schedule_admin_router
@@ -32,6 +33,9 @@ app.include_router(
     employee_dashboard_router,
     prefix="/employee/dashboard",
     tags=["dashboard"],
+)
+app.include_router(
+    admin_dashboard_router, prefix="/admin/dashboard", tags=["admin", "dashboard"]
 )
 
 

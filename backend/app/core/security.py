@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Annotated, Any, Optional
 
 from app.core.config import settings
 from app.features.auth.models import User
@@ -52,7 +52,11 @@ def create_refresh_token(data: dict) -> str:
 
 async def get_current_user(
     db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
-) -> User:
+) -> "User":
+    from app.features.auth.models import (
+        User,  # TODO: Remove after just for quick solutions for circular
+    )
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -83,8 +87,8 @@ async def get_current_user(
 
 
 async def get_current_active_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
+    current_user: Annotated["User", Depends(get_current_user)]
+) -> "User":
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
