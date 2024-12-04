@@ -11,6 +11,7 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
+.DS_Store
 
 
 # Don't ignore migrations
