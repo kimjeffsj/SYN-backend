@@ -1,11 +1,19 @@
 from .router import router
-from .schemas import DashboardResponse, DashboardStats, RecentUpdate
+from .schemas import (
+    DashboardStatsDetailResponse,
+    DashboardStatsEmployee,
+    DashboardStatsSchedule,
+    EmployeeOverviewResponse,
+    RecentUpdateResponse,
+)
 from .service import AdminDashboardService
 
 __all__ = [
     "router",
-    "DashboardResponse",
-    "DashboardStats",
-    "RecentUpdate",
+    "DashboardStatsDetailResponse",
+    "DashboardStatsEmployee",
+    "DashboardStatsSchedule",
+    "EmployeeOverviewResponse",
+    "RecentUpdateResponse",
     "AdminDashboardService",
 ]

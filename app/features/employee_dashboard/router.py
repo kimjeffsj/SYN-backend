@@ -12,6 +12,7 @@ router = APIRouter()
 
 @router.get("/", response_model=EmployeeDashboardResponse)
 async def get_employee_dashboard(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ):
-    return await EmployeeDashboardService.get_dashboard_data(db, current_user)
+    """Get employee dashboard data"""
+    return await EmployeeDashboardService.get_dashboard_data(db, current_user.id)
