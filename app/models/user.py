@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, relationship
 
 from .base import Base
 
 if TYPE_CHECKING:
+    from .notification import Notification
     from .schedule import Schedule
 
 
@@ -22,12 +23,16 @@ class User(Base):
     hashed_password: Mapped[str] = Column(String)
     role: Mapped[str] = Column(String)  # "admin" or "employee"
 
+    # Profile fields
+    department: Mapped[Optional[str]] = Column(String, nullable=True)
+    position: Mapped[Optional[str]] = Column(String, nullable=True)
+    avatar: Mapped[Optional[str]] = Column(String, nullable=True)
+
     # Status and security fields
     is_active: Mapped[bool] = Column(Boolean, default=True)
-    requires_password_change: Mapped[bool] = Column(Boolean, default=False)
-    last_password_change: Mapped[Optional[datetime]] = Column(
-        DateTime(timezone=True), nullable=True
-    )
+    is_on_leave: Mapped[bool] = Column(Boolean, default=False)
+    leave_balance: Mapped[int] = Column(Integer, default=0)
+    total_hours_worked: Mapped[float] = Column(Float, default=0.0)
 
     # Timestamps
     created_at: Mapped[datetime] = Column(
@@ -35,6 +40,9 @@ class User(Base):
     )
     updated_at: Mapped[Optional[datetime]] = Column(
         DateTime(timezone=True), onupdate=func.now(), nullable=True
+    )
+    last_active_at: Mapped[Optional[datetime]] = Column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Relationships
@@ -52,9 +60,21 @@ class User(Base):
         foreign_keys="Schedule.created_by",
     )
 
+    notifications: Mapped[List["Notification"]] = relationship(
+        "Notification", back_populates="user", cascade="all, delete-orphan"
+    )
+
     def __repr__(self) -> str:
         return f"<User {self.id}: {self.email}>"
 
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    @property
+    def pending_requests_count(self) -> int:
+        return len([s for s in self.schedules if s.status == "pending"])
+
+    @property
+    def completed_shifts_count(self) -> int:
+        return len([s for s in self.schedules if s.status == "completed"])
