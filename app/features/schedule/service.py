@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 
 from app.models.schedule import Schedule
@@ -7,64 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from .schemas import (
-    ScheduleBulkCreateDto,
-    ScheduleCreate,
-    ScheduleSearchParams,
-    ScheduleUpdate,
-)
-
-
-class RepeatPattern:
-    """Helper class for handling schedule repeat patterns"""
-
-    @staticmethod
-    def parse(pattern: str) -> tuple[str, int, list[int], datetime]:
-        """Parse repeat pattern string (type|interval|days|end_date)"""
-        try:
-            pattern_type, interval, days, end_date = pattern.split("|")
-            return (
-                pattern_type,
-                int(interval),
-                [int(d) for d in days.split(",")] if days else [],
-                datetime.fromisoformat(end_date),
-            )
-        except (ValueError, AttributeError) as e:
-            raise ValueError(f"Invalid repeat pattern format: {str(e)}")
-
-    @staticmethod
-    def get_next_date(
-        current_date: datetime, pattern_type: str, interval: int, days: list[int]
-    ) -> datetime:
-        """Calculate next occurrence based on pattern"""
-        if pattern_type == "daily":
-            return current_date + timedelta(days=interval)
-
-        elif pattern_type == "weekly":
-            # If no specific days are specified, use the same day of week
-            if not days:
-                return current_date + timedelta(weeks=interval)
-
-            # Find next available day
-            current_day = current_date.weekday()
-            next_days = [d for d in days if d > current_day]
-
-            if next_days:
-                days_ahead = next_days[0] - current_day
-            else:
-                days_ahead = (7 - current_day) + days[0] + (7 * (interval - 1))
-
-            return current_date + timedelta(days=days_ahead)
-
-        elif pattern_type == "monthly":
-            # Add months by replacing month and year values
-            year = current_date.year + ((current_date.month + interval - 1) // 12)
-            month = ((current_date.month + interval - 1) % 12) + 1
-
-            return current_date.replace(year=year, month=month)
-
-        else:
-            raise ValueError(f"Unsupported repeat pattern type: {pattern_type}")
+from .schemas import ScheduleCreate, ScheduleSearchParams
 
 
 class ScheduleService:
@@ -114,131 +57,19 @@ class ScheduleService:
         return query.order_by(Schedule.start_time.desc()).all()
 
     @staticmethod
-    def create_schedule(
-        db: Session, schedule_data: ScheduleCreate, created_by: int
-    ) -> Schedule:
-        """Create a new schedule"""
-        # Handle repeating schedule
-        if schedule_data.is_repeating and schedule_data.repeat_pattern:
-            return ScheduleService._create_repeating_schedule(
-                db, schedule_data, created_by
-            )
-
-        # Single schedule creation
-        if schedule_data.start_time >= schedule_data.end_time:
+    def create_schedule(db: Session, schedule_data: dict, created_by: int) -> Schedule:
+        """Create a single schedule"""
+        if schedule_data["start_time"] >= schedule_data["end_time"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="End time must be after start time",
             )
 
-        if ScheduleService._check_schedule_conflict(
-            db, schedule_data.user_id, schedule_data.start_time, schedule_data.end_time
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Schedule conflicts with existing schedule",
-            )
-
         try:
-            db_schedule = Schedule(
-                **schedule_data.model_dump(),
-                created_by=created_by,
-                status=ScheduleStatus.PENDING,
+            schedule = Schedule(
+                **schedule_data, created_by=created_by, status=ScheduleStatus.PENDING
             )
-            db.add(db_schedule)
-            db.commit()
-            db.refresh(db_schedule)
-            return db_schedule
-
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-            )
-
-    @staticmethod
-    def bulk_create_schedules(
-        db: Session, schedules_data: ScheduleBulkCreateDto, created_by: int
-    ) -> List[Schedule]:
-        """Create multiple schedules at once"""
-        created_schedules = []
-
-        try:
-            for schedule_data in schedules_data.schedules:
-                # Handle repeating schedules within bulk creation
-                if schedule_data.is_repeating and schedule_data.repeat_pattern:
-                    repeat_schedule = ScheduleService._create_repeating_schedule(
-                        db, schedule_data, created_by
-                    )
-                    created_schedules.append(repeat_schedule)
-                    continue
-
-                if ScheduleService._check_schedule_conflict(
-                    db,
-                    schedule_data.user_id,
-                    schedule_data.start_time,
-                    schedule_data.end_time,
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Schedule conflict found for user {schedule_data.user_id}",
-                    )
-
-                db_schedule = Schedule(
-                    **schedule_data.model_dump(),
-                    created_by=created_by,
-                    status=ScheduleStatus.PENDING,
-                )
-                db.add(db_schedule)
-                created_schedules.append(db_schedule)
-
-            db.commit()
-            for schedule in created_schedules:
-                db.refresh(schedule)
-
-            return created_schedules
-
-        except HTTPException:
-            db.rollback()
-            raise
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-            )
-
-    @staticmethod
-    def update_schedule(
-        db: Session, schedule_id: int, schedule_update: ScheduleUpdate
-    ) -> Schedule:
-        """Update schedule details"""
-        schedule = ScheduleService.get_schedule(db, schedule_id)
-
-        update_data = schedule_update.model_dump(exclude_unset=True)
-
-        # If updating times, check for conflicts
-        if "start_time" in update_data or "end_time" in update_data:
-            start_time = update_data.get("start_time", schedule.start_time)
-            end_time = update_data.get("end_time", schedule.end_time)
-
-            if start_time >= end_time:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="End time must be after start time",
-                )
-
-            if ScheduleService._check_schedule_conflict(
-                db, schedule.user_id, start_time, end_time, schedule_id
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Schedule conflicts with existing schedule",
-                )
-
-        try:
-            for key, value in update_data.items():
-                setattr(schedule, key, value)
-
+            db.add(schedule)
             db.commit()
             db.refresh(schedule)
             return schedule
@@ -250,60 +81,18 @@ class ScheduleService:
             )
 
     @staticmethod
-    def _create_repeating_schedule(
-        db: Session, schedule_data: ScheduleCreate, created_by: int
-    ) -> Schedule:
-        """Create a schedule with repeating pattern"""
+    def update_schedule(db: Session, schedule_id: int, schedule_data: dict) -> Schedule:
+        """Update schedule details"""
+        schedule = ScheduleService.get_schedule(db, schedule_id)
+
         try:
-            # Parse repeat pattern
-            pattern_type, interval, days, end_date = RepeatPattern.parse(
-                schedule_data.repeat_pattern
-            )
+            for key, value in schedule_data.items():
+                setattr(schedule, key, value)
 
-            # Create parent schedule
-            parent_schedule = Schedule(
-                **schedule_data.model_dump(),
-                created_by=created_by,
-                status=ScheduleStatus.PENDING,
-                is_repeating=True,
-            )
-            db.add(parent_schedule)
-            db.flush()
-
-            # Create child schedules
-            current_date = schedule_data.start_time
-            duration = schedule_data.end_time - schedule_data.start_time
-            child_schedules = []
-
-            while current_date <= end_date:
-                if not ScheduleService._check_schedule_conflict(
-                    db, schedule_data.user_id, current_date, current_date + duration
-                ):
-                    child_schedule = Schedule(
-                        user_id=schedule_data.user_id,
-                        start_time=current_date,
-                        end_time=current_date + duration,
-                        shift_type=schedule_data.shift_type,
-                        description=schedule_data.description,
-                        status=ScheduleStatus.PENDING,
-                        is_repeating=True,
-                        parent_schedule_id=parent_schedule.id,
-                        created_by=created_by,
-                    )
-                    child_schedules.append(child_schedule)
-
-                current_date = RepeatPattern.get_next_date(
-                    current_date, pattern_type, interval, days
-                )
-
-            db.add_all(child_schedules)
             db.commit()
-            db.refresh(parent_schedule)
-            return parent_schedule
+            db.refresh(schedule)
+            return schedule
 
-        except ValueError as e:
-            db.rollback()
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
             db.rollback()
             raise HTTPException(

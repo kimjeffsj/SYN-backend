@@ -2,7 +2,8 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.models import ScheduleStatus, ShiftType
-from pydantic import BaseModel, Field, field_validator
+from app.models.schedule_enums import RepeatFrequency
+from pydantic import BaseModel, Field
 
 
 class ScheduleBase(BaseModel):
@@ -14,19 +15,6 @@ class ScheduleBase(BaseModel):
     description: Optional[str] = None
     is_repeating: bool = False
     repeat_pattern: Optional[str] = None
-
-    @field_validator("end_time")
-    def validate_end_time(cls, v: datetime, info):
-        start_time = info.data.get("start_time")
-        if start_time and v <= start_time:
-            raise ValueError("End time must be after start time")
-        return v
-
-    @field_validator("start_time", "end_time")
-    def validate_timezone(cls, v: datetime):
-        if v.tzinfo is None:
-            raise ValueError("Datetime must include timezone information")
-        return v
 
 
 class ScheduleCreate(ScheduleBase):
@@ -71,7 +59,76 @@ class ScheduleSearchParams(BaseModel):
     status: Optional[ScheduleStatus] = None
 
 
-class ScheduleBulkCreateDto(BaseModel):
-    """DTO for creating multiple schedules at once"""
+class RepeatingPattern(BaseModel):
+    """Schema for repeating schedule"""
+
+    type: RepeatFrequency
+    interval: int = Field(..., gt=0)
+    days: Optional[List[int]] = Field(
+        None, description="Days of week (0-6) for weekly pattern"
+    )
+    end_date: datetime
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "type": "weekly",
+                "interval": 1,
+                "days": [0, 2, 4],  # Mon, Wed, Fri
+                "end_date": "2024-12-31T00:00:00Z",
+            }
+        }
+
+
+class BulkScheduleCreate(BaseModel):
+    """Creating multiple schedules"""
 
     schedules: List[ScheduleCreate] = Field(..., min_items=1)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "schedules": [
+                    {
+                        "user_id": 1,
+                        "start_time": "2024-12-01T09:00:00Z",
+                        "end_time": "2024-12-01T17:00:00Z",
+                        "shift_type": ShiftType.MORNING.value,
+                        "description": "Regular shift",
+                    },
+                    {
+                        "user_id": 2,
+                        "start_time": "2024-12-01T14:00:00Z",
+                        "end_time": "2024-12-01T22:00:00Z",
+                        "shift_type": ShiftType.EVENING.value,
+                        "description": "Evening shift",
+                    },
+                ]
+            }
+        }
+
+
+class RepeatingScheduleCreate(BaseModel):
+    """Schema for creating repeating schedule"""
+
+    base_schedule: ScheduleCreate
+    pattern: RepeatingPattern
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "base_schedule": {
+                    "user_id": 1,
+                    "start_time": "2024-12-01T09:00:00Z",
+                    "end_time": "2024-12-01T17:00:00Z",
+                    "shift_type": ShiftType.MORNING.value,
+                    "description": "Regular morning shift",
+                },
+                "pattern": {
+                    "type": RepeatFrequency.WEEKLY.value,
+                    "interval": 1,
+                    "days": [0, 2, 4],
+                    "end_date": "2024-12-31T00:00:00Z",
+                },
+            }
+        }
