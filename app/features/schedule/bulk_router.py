@@ -1,14 +1,10 @@
+from app.core.database import get_db
+from app.core.security import get_current_admin_user
+from app.features.schedule.bulk_service import BulkScheduleService
+from app.features.schedule.schemas import BulkScheduleCreate, RepeatingScheduleCreate
+from app.models.user import User
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-
-from backend.app.core.database import get_db
-from backend.app.core.security import get_current_admin_user
-from backend.app.features.schedule.bulk_service import BulkScheduleService
-from backend.app.features.schedule.schemas import (
-    BulkScheduleCreate,
-    RepeatingScheduleCreate,
-)
-from backend.app.models.user import User
 
 router = APIRouter()
 

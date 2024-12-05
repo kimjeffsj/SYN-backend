@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta
 
 from app.models.schedule import Schedule
+from app.models.schedule_enums import ScheduleStatus
 from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
-from backend.app.models.schedule_enums import ScheduleStatus
 
 
 class EmployeeDashboardService:
