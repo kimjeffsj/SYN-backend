@@ -14,7 +14,10 @@ class ScheduleBase(BaseModel):
     shift_type: ShiftType
     description: Optional[str] = None
     is_repeating: bool = False
-    repeat_pattern: Optional[str] = None
+    repeat_frequency: Optional[RepeatFrequency] = None
+    repeat_interval: Optional[int] = None
+    repeat_days: Optional[str] = None
+    repeat_end_date: Optional[datetime] = None
 
 
 class ScheduleCreate(ScheduleBase):
@@ -26,13 +29,15 @@ class ScheduleCreate(ScheduleBase):
 class ScheduleUpdate(BaseModel):
     """Schema for updating an existing schedule"""
 
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    shift_type: Optional[ShiftType] = None
-    status: Optional[ScheduleStatus] = None
+    start_time: datetime
+    end_time: datetime
+    shift_type: ShiftType
     description: Optional[str] = None
-    is_repeating: Optional[bool] = None
-    repeat_pattern: Optional[str] = None
+    is_repeating: bool = False
+    repeat_frequency: Optional[RepeatFrequency] = None
+    repeat_interval: Optional[int] = None
+    repeat_days: Optional[str] = None
+    repeat_end_date: Optional[datetime] = None
 
 
 class ScheduleResponse(ScheduleBase):
@@ -85,27 +90,32 @@ class BulkScheduleCreate(BaseModel):
 
     schedules: List[ScheduleCreate] = Field(..., min_items=1)
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "schedules": [
-                    {
-                        "user_id": 1,
-                        "start_time": "2024-12-01T09:00:00Z",
-                        "end_time": "2024-12-01T17:00:00Z",
-                        "shift_type": ShiftType.MORNING.value,
-                        "description": "Regular shift",
-                    },
-                    {
-                        "user_id": 2,
-                        "start_time": "2024-12-01T14:00:00Z",
-                        "end_time": "2024-12-01T22:00:00Z",
-                        "shift_type": ShiftType.EVENING.value,
-                        "description": "Evening shift",
-                    },
-                ]
-            }
+
+class Config:
+    json_schema_extra = {
+        "example": {
+            "schedules": [
+                {
+                    "start_time": "2024-12-05T22:40:16.268Z",
+                    "end_time": "2024-12-05T22:40:16.268Z",
+                    "shift_type": "morning",
+                    "description": "string",
+                    "is_repeating": False,
+                    "repeat_pattern": None,
+                    "user_id": 1,
+                },
+                {
+                    "start_time": "2024-12-05T22:40:16.268Z",
+                    "end_time": "2024-12-05T22:40:16.268Z",
+                    "shift_type": "evening",
+                    "description": "string",
+                    "is_repeating": False,
+                    "repeat_pattern": None,
+                    "user_id": 2,
+                },
+            ]
         }
+    }
 
 
 class RepeatingScheduleCreate(BaseModel):

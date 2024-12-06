@@ -4,6 +4,30 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class DashboardStats(BaseModel):
+    employees: dict
+    requests: dict
+
+
+class RecentUpdate(BaseModel):
+    id: int
+    type: str
+    title: str
+    description: str
+    timestamp: datetime
+    status: str
+
+
+class DashboardResponse(BaseModel):
+    stats: DashboardStats
+    recent_updates: list[RecentUpdate]
+    employees: list[dict]
+    announcements: list[dict]
+
+    class Config:
+        from_attributes = True
+
+
 class DashboardStatsEmployee(BaseModel):
     total: int
     active: int
@@ -20,15 +44,6 @@ class DashboardStatsSchedule(BaseModel):
 class DashboardStatsDetailResponse(BaseModel):
     employees: DashboardStatsEmployee
     schedules: DashboardStatsSchedule
-
-
-class RecentUpdateResponse(BaseModel):
-    id: str
-    type: str
-    user: str
-    action: str
-    timestamp: datetime
-    status: str
 
 
 class EmployeeOverviewResponse(BaseModel):

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus
@@ -18,7 +18,7 @@ class BulkScheduleService:
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"User {schedule["user.full_name"]} not found",
+                    detail=f"User {schedule["user_id"]} not found",
                 )
 
             # Check schedule conflicts
@@ -27,7 +27,7 @@ class BulkScheduleService:
             ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Schedule conflict found for user {schedule["user.full_name"]}",
+                    detail=f"Schedule conflict found for user {schedule["user.id"]}",
                 )
 
         return True
@@ -116,13 +116,21 @@ class BulkScheduleService:
     async def _check_schedule_conflict(
         db: Session,
         user_id: int,
-        start_time: str,
-        end_time: str,
+        start_time: Union[str, datetime],
+        end_time: Union[str, datetime],
         exclude_id: Optional[int] = None,
     ) -> bool:
         """Check for schedule conflicts"""
-        start = datetime.fromisoformat(start_time)
-        end = datetime.fromisoformat(end_time)
+        start = (
+            start_time
+            if isinstance(start_time, datetime)
+            else datetime.fromisoformat(start_time)
+        )
+        end = (
+            end_time
+            if isinstance(end_time, datetime)
+            else datetime.fromisoformat(end_time)
+        )
 
         query = db.query(Schedule).filter(
             Schedule.user_id == user_id,

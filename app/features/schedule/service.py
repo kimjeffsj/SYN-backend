@@ -33,26 +33,26 @@ class ScheduleService:
 
     @staticmethod
     def get_all_schedules(
-        db: Session, search_params: Optional[ScheduleSearchParams] = None
+        db: Session, search_params: Optional[dict] = None
     ) -> List[Schedule]:
         """Get all schedules with optional filtering"""
         query = db.query(Schedule)
 
         if search_params:
-            if search_params.user_id:
-                query = query.filter(Schedule.user_id == search_params.user_id)
+            if search_params.get("user_id"):
+                query = query.filter(Schedule.user_id == search_params["user_id"])
 
-            if search_params.start_date:
-                query = query.filter(Schedule.start_time >= search_params.start_date)
+            if search_params.get("start_date"):
+                query = query.filter(Schedule.start_time >= search_params["start_date"])
 
-            if search_params.end_date:
-                query = query.filter(Schedule.end_time <= search_params.end_date)
+            if search_params.get("end_date"):
+                query = query.filter(Schedule.end_time <= search_params["end_date"])
 
-            if search_params.shift_type:
-                query = query.filter(Schedule.shift_type == search_params.shift_type)
+            if search_params.get("shift_type"):
+                query = query.filter(Schedule.shift_type == search_params["shift_type"])
 
-            if search_params.status:
-                query = query.filter(Schedule.status == search_params.status)
+            if search_params.get("status"):
+                query = query.filter(Schedule.status == search_params["status"])
 
         return query.order_by(Schedule.start_time.desc()).all()
 

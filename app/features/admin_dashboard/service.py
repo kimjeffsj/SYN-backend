@@ -98,16 +98,18 @@ class AdminDashboardService:
         )
 
         for schedule in recent_schedules:
-            activities.append(
-                {
-                    "id": f"schedule_{schedule.id}",
-                    "type": "SCHEDULE_CHANGE",
-                    "user": schedule.user.full_name,
-                    "action": f"Schedule {schedule.status.lower()}",
-                    "timestamp": schedule.updated_at,
-                    "status": schedule.status,
-                }
-            )
+            if schedule.updated_at:
+                activities.append(
+                    {
+                        "id": schedule.id,
+                        "type": "SCHEDULE_CHANGE",
+                        "title": f"Schedule {schedule.status.lower()}",
+                        "description": f"Schedule for {schedule.user.full_name}",
+                        "user": schedule.user.full_name,
+                        "timestamp": schedule.updated_at,
+                        "status": schedule.status,
+                    }
+                )
 
         # Recent notifications
         recent_notifications = (
@@ -118,19 +120,23 @@ class AdminDashboardService:
         )
 
         for notification in recent_notifications:
-            activities.append(
-                {
-                    "id": f"notification_{notification.id}",
-                    "type": notification.type,
-                    "user": notification.user.full_name,
-                    "action": notification.message,
-                    "timestamp": notification.created_at,
-                    "status": "completed" if notification.is_read else "pending",
-                }
-            )
+            if notification.created_at:
+                activities.append(
+                    {
+                        "id": notification.id,
+                        "type": notification.type,
+                        "title": "New Notification",
+                        "description": notification.message,
+                        "user": notification.user.full_name,
+                        "timestamp": notification.created_at,
+                        "status": "completed" if notification.is_read else "pending",
+                    }
+                )
 
         # Sort combined activities by timestamp
-        activities.sort(key=lambda x: x["timestamp"], reverse=True)
+        if activities:
+            activities.sort(key=lambda x: x["timestamp"] or datetime.min, reverse=True)
+
         return activities
 
     @staticmethod

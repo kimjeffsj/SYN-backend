@@ -6,8 +6,9 @@ from app.models.user import User
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from .bulk_service import BulkScheduleService
 from .schemas import (
-    ScheduleBulkCreateDto,
+    BulkScheduleCreate,
     ScheduleCreate,
     ScheduleResponse,
     ScheduleSearchParams,
@@ -23,7 +24,7 @@ async def get_all_schedules(
     db: Session = Depends(get_db), search_params: ScheduleSearchParams = Depends()
 ):
     """Get all schedules with optional filtering"""
-    return ScheduleService.get_all_schedules(db, search_params)
+    return ScheduleService.get_all_schedules(db, search_params.model_dump())
 
 
 @router.post("/", response_model=ScheduleResponse)
@@ -33,17 +34,19 @@ async def create_schedule(
     admin: User = Depends(get_current_admin_user),
 ):
     """Create a new schedule"""
-    return ScheduleService.create_schedule(db, schedule, admin.id)
+    return ScheduleService.create_schedule(db, schedule.model_dump(), admin.id)
 
 
 @router.post("/bulk", response_model=List[ScheduleResponse])
 async def create_bulk_schedules(
-    schedules_data: ScheduleBulkCreateDto,
+    schedules_data: BulkScheduleCreate,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
     """Create multiple schedules at once"""
-    return ScheduleService.bulk_create_schedules(db, schedules_data, admin.id)
+    return await BulkScheduleService.create_bulk_schedules(
+        db, [schedule.model_dump() for schedule in schedules_data.schedules], admin.id
+    )
 
 
 @router.put("/{schedule_id}", response_model=ScheduleResponse)
@@ -51,7 +54,9 @@ async def update_schedule(
     schedule_id: int, schedule_update: ScheduleUpdate, db: Session = Depends(get_db)
 ):
     """Update schedule details"""
-    return ScheduleService.update_schedule(db, schedule_id, schedule_update)
+    return ScheduleService.update_schedule(
+        db, schedule_id, schedule_update.model_dump()
+    )
 
 
 @router.delete("/{schedule_id}")

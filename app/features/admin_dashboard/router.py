@@ -1,7 +1,7 @@
 from app.core.database import get_db
-from app.core.security import get_current_active_user, get_current_admin_user
-from app.models.user import User
-from fastapi import APIRouter, Depends, HTTPException
+from app.core.security import get_current_admin_user
+from app.models import User
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .schemas import (
@@ -18,7 +18,7 @@ router = APIRouter()
 async def get_dashboard_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
-    """Get detailed admin dashboard stats"""
+    """Get detailed admin dashboard statistics"""
     return await AdminDashboardService.get_dashboard_stats(db)
 
 
@@ -28,7 +28,7 @@ async def get_recent_updates(
     current_user: User = Depends(get_current_admin_user),
     limit: int = 10,
 ):
-    """Get recent updates"""
+    """Get recent system updates"""
     return await AdminDashboardService.get_recent_updates(db, limit)
 
 
