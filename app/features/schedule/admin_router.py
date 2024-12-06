@@ -16,7 +16,7 @@ from .schemas import (
 )
 from .service import ScheduleService
 
-router = APIRouter()
+router = APIRouter(tags=["Admin"])
 
 
 @router.get("/", response_model=List[ScheduleResponse])

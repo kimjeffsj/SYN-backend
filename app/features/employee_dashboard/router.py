@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .schemas import EmployeeDashboardResponse
 from .service import EmployeeDashboardService
 
-router = APIRouter()
+router = APIRouter(tags=["Dashboard", "Employee"])
 
 
 @router.get("/", response_model=EmployeeDashboardResponse)

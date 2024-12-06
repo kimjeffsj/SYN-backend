@@ -11,7 +11,7 @@ from .schemas import (
 )
 from .service import AdminDashboardService
 
-router = APIRouter()
+router = APIRouter(tags=["Dashboard", "Admin"])
 
 
 @router.get("/stats", response_model=DashboardStatsDetailResponse)

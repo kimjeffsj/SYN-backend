@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .schemas import ScheduleResponse
 from .service import ScheduleService
 
-router = APIRouter()
+router = APIRouter(tags=["Employee"])
 
 
 @router.get("/my-schedules", response_model=List[ScheduleResponse])

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .schemas import LoginSchema, TokenSchema, UserCreateSchema, UserResponse
 from .service import AuthService
 
-router = APIRouter()
+router = APIRouter(tags=["Auth"])
 
 
 @router.post("/register", response_model=UserResponse)

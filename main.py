@@ -13,7 +13,25 @@ from fastapi.middleware.cors import CORSMiddleware
 Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI app
-app = FastAPI(title=settings.PROJECT_NAME, version="1.0.0")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version="1.0.0",
+    openapi_tags=[
+        {"name": "Auth", "description": "Authentication and authorization operations"},
+        {
+            "name": "Admin",
+            "description": "Administrative operations for managing schedules and users",
+        },
+        {
+            "name": "Employee",
+            "description": "Employee operations for viewing schedules and managing profile",
+        },
+        {
+            "name": "Dashboard",
+            "description": "Dashboard views and operations for both admin and employees",
+        },
+    ],
+)
 
 # Configure CORS
 app.add_middleware(
@@ -25,18 +43,20 @@ app.add_middleware(
 )
 
 # Routers
-app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
-app.include_router(schedule_router, prefix="/schedules", tags=["schedules"])
-app.include_router(
-    schedule_admin_router, prefix="/admin/schedules", tags=["admin", "schedules"]
-)
+app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+
+app.include_router(schedule_router, prefix="/schedules", tags=["Employee"])
+
+app.include_router(schedule_admin_router, prefix="/admin/schedules", tags=["Admin"])
+
 app.include_router(
     employee_dashboard_router,
     prefix="/employee/dashboard",
-    tags=["dashboard"],
+    tags=["Dashboard", "Employee"],
 )
+
 app.include_router(
-    admin_dashboard_router, prefix="/admin/dashboard", tags=["admin", "dashboard"]
+    admin_dashboard_router, prefix="/admin/dashboard", tags=["Dashboard", "Admin"]
 )
 
 
