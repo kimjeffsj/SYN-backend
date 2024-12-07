@@ -1,8 +1,9 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
 from app.core.database import get_db
 from app.core.security import get_current_admin_user
 from app.models import User
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 
 from .schemas import (
     DashboardStatsDetailResponse,
@@ -12,6 +13,14 @@ from .schemas import (
 from .service import AdminDashboardService
 
 router = APIRouter(tags=["Dashboard", "Admin"])
+
+
+@router.get("/", response_model=DashboardStatsDetailResponse)
+async def get_dashboard(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
+):
+    """Get admin dashboard main view"""
+    return await AdminDashboardService.get_dashboard_stats(db)
 
 
 @router.get("/stats", response_model=DashboardStatsDetailResponse)

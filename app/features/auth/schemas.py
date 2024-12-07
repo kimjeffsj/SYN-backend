@@ -37,6 +37,7 @@ class TokenSchema(BaseModel):
 
     access_token: str
     token_type: str
+    redirect_url: Optional[str] = None
 
 
 class TokenDataSchema(BaseModel):

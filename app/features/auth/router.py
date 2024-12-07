@@ -35,6 +35,12 @@ async def login(
         db, LoginSchema(email=form_data.username, password=form_data.password)
     )
     tokens = AuthService.create_user_tokens(user)
+
+    response_data = TokenSchema(**tokens)
+    response_data.redirect_url = (
+        "/admin/dashboard" if user.role == "admin" else "/dashboard"
+    )
+
     return TokenSchema(**tokens)
 
 
