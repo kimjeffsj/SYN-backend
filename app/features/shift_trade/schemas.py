@@ -1,9 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
+from app.models.shift_trade import TradeStatus, TradeType, UrgencyLevel
 from pydantic import BaseModel
-
-from backend.app.models.shift_trade import TradeStatus, TradeType, UrgencyLevel
 
 
 class ShiftTradeBase(BaseModel):

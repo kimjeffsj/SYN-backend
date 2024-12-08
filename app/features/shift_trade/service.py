@@ -1,11 +1,9 @@
 from typing import List, Optional
-from urllib import response
 
+from app.features.shift_trade import schemas
+from app.models.shift_trade import ShiftTrade, ShiftTradeResponse, TradeStatus
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-
-from backend.app.features.shift_trade import schemas
-from backend.app.models.shift_trade import ShiftTrade, ShiftTradeResponse, TradeStatus
 
 
 class ShiftTradeService:
