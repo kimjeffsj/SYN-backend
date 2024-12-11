@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(tags=["Shift Trade"])
 
 
-@router.get("/trades", response_model=schemas.ShiftTradeResponse)
+@router.post("/", response_model=schemas.ShiftTradeResponse)
 async def create_trade_request(
     trade_data: schemas.ShiftTradeCreate,
     db: Session = Depends(get_db),
@@ -21,7 +21,7 @@ async def create_trade_request(
     return await ShiftTradeService.create_trade_request(db, trade_data, current_user.id)
 
 
-@router.get("/trades", response_model=List[schemas.ShiftTradeResponse])
+@router.get("/", response_model=List[schemas.ShiftTradeResponse])
 async def get_trade_requests(
     status: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
@@ -34,9 +34,7 @@ async def get_trade_requests(
     return await ShiftTradeService.get_trade_requests(db, skip, limit, status, type)
 
 
-@router.get(
-    "/trades/{trade_id}/responses", response_model=schemas.ShiftTradeResponseDetail
-)
+@router.get("/{trade_id}/responses", response_model=schemas.ShiftTradeResponseDetail)
 async def respond_to_trade(
     trade_id: int,
     response_data: schemas.ShiftTradeResponseCreate,
@@ -49,7 +47,7 @@ async def respond_to_trade(
     )
 
 
-@router.post("/trades/{trade_id}/responses/{response_id}/approve")
+@router.post("/{trade_id}/responses/{response_id}/approve")
 async def approve_trade_response(
     trade_id: int,
     response_id: int,

@@ -1,6 +1,3 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 from app.core.config import settings
 from app.core.database import engine
 from app.features.admin_dashboard import router as admin_dashboard_router
@@ -8,7 +5,10 @@ from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
+from app.features.shift_trade import router as shift_trade_router
 from app.models import Base
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -59,6 +59,8 @@ app.include_router(
 app.include_router(
     admin_dashboard_router, prefix="/admin/dashboard", tags=["Dashboard", "Admin"]
 )
+
+app.include_router(shift_trade_router, prefix="/trades", tags=["Shift Trade"])
 
 
 @app.get("/")
