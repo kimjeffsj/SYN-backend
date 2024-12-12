@@ -58,6 +58,64 @@ class ShiftTradeService:
             )
 
     @staticmethod
+    async def get_trade_request(db: Session, id: int) -> dict:
+        """Get a specific trade request with responses"""
+        trade = db.query(ShiftTrade).filter(ShiftTrade.id == id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade request not found")
+
+        # Format responses
+        formatted_responses = []
+        for response in trade.responses:
+            formatted_response = {
+                "id": response.id,
+                "respondent": {
+                    "id": response.respondent.id,
+                    "name": response.respondent.full_name,
+                    "position": response.respondent.position,
+                },
+                "offered_shift": {
+                    "date": response.offered_shift.start_time.strftime("%Y-%m-%d"),
+                    "time": f"{response.offered_shift.start_time.strftime('%H:%M')}-{response.offered_shift.end_time.strftime('%H:%M')}",
+                    "shift_type": response.offered_shift.shift_type,
+                },
+                "content": response.content,
+                "status": response.status,
+                "created_at": response.created_at.isoformat(),
+            }
+            formatted_responses.append(formatted_response)
+
+        # Format trade request with responses
+        formatted_trade = {
+            "id": trade.id,
+            "type": trade.type,
+            "author": {
+                "id": trade.author.id,
+                "name": trade.author.full_name,
+                "position": trade.author.position,
+            },
+            "original_shift": {
+                "date": trade.original_shift.start_time.strftime("%Y-%m-%d"),
+                "time": f"{trade.original_shift.start_time.strftime('%H:%M')}-{trade.original_shift.end_time.strftime('%H:%M')}",
+                "shift_type": trade.original_shift.shift_type,
+            },
+            "status": trade.status,
+            "responses": formatted_responses,
+            "created_at": trade.created_at.isoformat(),
+            "reason": trade.reason,
+            "urgency": trade.urgency,
+        }
+
+        if trade.preferred_shift_id and trade.preferred_shift:
+            formatted_trade["preferred_shift"] = {
+                "date": trade.preferred_shift.start_time.strftime("%Y-%m-%d"),
+                "time": f"{trade.preferred_shift.start_time.strftime('%H:%M')}-{trade.preferred_shift.end_time.strftime('%H:%M')}",
+                "shift_type": trade.preferred_shift.shift_type,
+            }
+
+        return formatted_trade
+
+    @staticmethod
     async def get_trade_requests(
         db: Session,
         skip: int = 0,
