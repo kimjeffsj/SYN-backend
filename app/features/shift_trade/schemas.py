@@ -27,6 +27,7 @@ class ShiftTradeResponse(ShiftTradeBase):
 
     class Config:
         from_attributes = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class ShiftTradeResponseBase(BaseModel):

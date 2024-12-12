@@ -20,7 +20,36 @@ class ShiftTradeService:
             db.add(trade_request)
             db.commit()
             db.refresh(trade_request)
-            return trade_request
+
+            return {
+                "id": trade_request.id,
+                "type": trade_request.type,
+                "author": {
+                    "id": trade_request.author.id,
+                    "name": trade_request.author.full_name,
+                    "position": trade_request.author.position,
+                },
+                "original_shift": {
+                    "date": trade_request.original_shift.start_time.strftime(
+                        "%Y-%m-%d"
+                    ),
+                    "time": f"{trade_request.original_shift.start_time.strftime('%H:%M')}-{trade_request.original_shift.end_time.strftime('%H:%M')}",
+                    "shift_type": trade_request.original_shift.shift_type,
+                },
+                "preferred_shift": trade_request.preferred_shift_id
+                and {
+                    "date": trade_request.preferred_shift.start_time.strftime(
+                        "%Y-%m-%d"
+                    ),
+                    "time": f"{trade_request.preferred_shift.start_time.strftime('%H:%M')}-{trade_request.preferred_shift.end_time.strftime('%H:%M')}",
+                    "shift_type": trade_request.preferred_shift.shift_type,
+                },
+                "status": trade_request.status,
+                "responses": len(trade_request.responses),
+                "created_at": trade_request.created_at.isoformat(),
+                "reason": trade_request.reason,
+                "urgency": trade_request.urgency,
+            }
 
         except Exception as e:
             db.rollback()
@@ -35,16 +64,72 @@ class ShiftTradeService:
         limit: int = 100,
         status: Optional[str] = None,
         type: Optional[str] = None,
-    ) -> List[ShiftTrade]:
+    ) -> List[dict]:
         """Get Shift Trade request list"""
-        query = db.query(ShiftTrade)
+        try:
+            query = db.query(ShiftTrade)
 
-        if status:
-            query = query.filter(ShiftTrade.status == status)
-        if type:
-            query = query.filter(ShiftTrade.type == type)
+            if status:
+                query = query.filter(ShiftTrade.status == status.upper())
+            if type:
+                query = query.filter(ShiftTrade.type == type.upper())
 
-        return query.offset(skip).limit(limit).all()
+            trades = query.offset(skip).limit(limit).all()
+
+            formatted_trades = []
+
+            for trade in trades:
+                if not trade or not trade.original_shift or not trade.author:
+                    continue
+
+                try:
+                    formatted_trade = {
+                        "id": trade.id,
+                        "type": trade.type,
+                        "author": {
+                            "id": trade.author.id,
+                            "name": trade.author.full_name,
+                            "position": trade.author.position,
+                        },
+                        "original_shift": {
+                            "date": trade.original_shift.start_time.strftime(
+                                "%Y-%m-%d"
+                            ),
+                            "time": f"{trade.original_shift.start_time.strftime('%H:%M')}-{trade.original_shift.end_time.strftime('%H:%M')}",
+                            "shift_type": trade.original_shift.shift_type,
+                        },
+                        "status": trade.status,
+                        "responses": len(trade.responses) if trade.responses else 0,
+                        "created_at": (
+                            trade.created_at.isoformat() if trade.created_at else None
+                        ),
+                        "reason": trade.reason,
+                        "urgency": trade.urgency,
+                    }
+
+                    # only if it has preferred_shift
+                    if trade.preferred_shift_id and trade.preferred_shift:
+                        formatted_trade["preferred_shift"] = {
+                            "date": trade.preferred_shift.start_time.strftime(
+                                "%Y-%m-%d"
+                            ),
+                            "time": f"{trade.preferred_shift.start_time.strftime('%H:%M')}-{trade.preferred_shift.end_time.strftime('%H:%M')}",
+                            "shift_type": trade.preferred_shift.shift_type,
+                        }
+                    else:
+                        formatted_trade["preferred_shift"] = None
+
+                    formatted_trades.append(formatted_trade)
+                except Exception as e:
+                    print(f"Error formatting trade {trade.id}: {str(e)}")
+                    continue
+
+            return formatted_trades
+        except Exception as e:
+            print(f"Error in get_trade_requests: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
 
     @staticmethod
     async def response_to_trade(
@@ -73,7 +158,7 @@ class ShiftTradeService:
         response = ShiftTradeResponse(
             trade_request_id=trade_id,
             respondent_id=respondent_id,
-            **response_data.model_dump()
+            **response_data.model_dump(),
         )
 
         try:
