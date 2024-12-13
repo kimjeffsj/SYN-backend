@@ -5,6 +5,7 @@ from app.features.announcements import router as announcement_router
 from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.notifications import router as notification_router
+from app.features.notifications.ws_router import router as notification_ws_router
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
 from app.features.shift_trade import router as shift_trade_router
@@ -72,6 +73,8 @@ app.include_router(shift_trade_router, prefix="/trades", tags=["Shift Trade"])
 app.include_router(announcement_router, prefix="/announcements", tags=["Announcements"])
 
 app.include_router(notification_router, prefix="/notifications", tags=["Notifications"])
+
+app.include_router(notification_ws_router, prefix="/ws/notifications")
 
 
 @app.get("/")

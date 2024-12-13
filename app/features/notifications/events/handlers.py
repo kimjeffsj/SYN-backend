@@ -1,13 +1,15 @@
-from app.core.events.event_bus import event_bus
-from app.features.notifications.service import NotificationService
-from app.models.events import Event, EventType
-from app.models.notification import NotificationType
+from app.core.events.base import Event
+from app.core.events.bus import event_bus
+
+from ..service import NotificationService
+from .types import NotificationEventType
 
 
 async def handle_schedule_update(event: Event):
+    """Handle schedule update event"""
     notification_data = {
         "user_id": event.data["user_id"],
-        "type": NotificationType.SCHEDULE_CHANGE,
+        "type": "SCHEDULE_CHANGE",
         "title": "Schedule Updated",
         "message": f"Your schedule for {event.data['date']} has been updated",
         "data": event.data,
@@ -16,4 +18,4 @@ async def handle_schedule_update(event: Event):
 
 
 # Register handlers
-event_bus.subscribe(EventType.SCHEDULE_UPDATED, handle_schedule_update)
+event_bus.subscribe(NotificationEventType.SCHEDULE_UPDATED, handle_schedule_update)

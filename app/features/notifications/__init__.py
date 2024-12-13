@@ -1,11 +1,12 @@
 from .router import router
-from .schemas import NotificationCreate, NotificationList, NotificationResponse
 from .service import NotificationService
+from .ws_manager import NotificationWebsocketManager, notification_manager
+from .ws_router import router as ws_router
 
 __all__ = [
     "router",
-    "NotificationCreate",
-    "NotificationList",
-    "NotificationResponse",
+    "ws_router",
+    "NotificationWebsocketManager",
+    "notification_manager",
     "NotificationService",
 ]
