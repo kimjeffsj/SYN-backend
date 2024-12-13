@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Redis Settings
+    REDIS_URL: str
+
+    @field_validator("REDIS_URL")
+    def validate_redis_url(cls, v: str) -> str:
+        if not v:
+            raise ValueError("Redis URL must be provided")
+        return v
+
     BACKEND_CORS_ORIGINS: List[str]
 
     @field_validator("DATABASE_URL", mode="before")
