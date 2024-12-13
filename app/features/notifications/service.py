@@ -55,6 +55,10 @@ class NotificationService:
             .all()
         )
 
+        items = [notification.to_dict() for notification in notifications]
+
+        return {"items": items, "total": total, "unread": unread}
+
     @staticmethod
     async def mark_as_read(db: Session, notification_id: int, user_id: int) -> bool:
         """Mark a notification as read"""

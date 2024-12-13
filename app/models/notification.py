@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING, Optional
+from typing import Any, Dict
 
 from sqlalchemy import (
     JSON,
@@ -11,62 +11,52 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    func,
 )
 from sqlalchemy.orm import Mapped, relationship
 
 from .base import Base
 
-if TYPE_CHECKING:
-    from .user import User
-
 
 class NotificationType(str, PyEnum):
-    ANNOUNCEMENT = "announcement"
-    SCHEDULE_CHANGE = "schedule_change"
-    SHIFT_TRADE = "shift_trade"
-    LEAVE_REQUEST = "leave_request"
-    SYSTEM = "system"
+    SCHEDULE_CHANGE = "SCHEDULE_CHANGE"
+    ANNOUNCEMENT = "ANNOUNCEMENT"
+    SHIFT_TRADE = "SHIFT_TRADE"
+    LEAVE_REQUEST = "LEAVE_REQUEST"
+    SYSTEM = "SYSTEM"
 
 
 class NotificationPriority(str, PyEnum):
-    HIGH = "high"
-    NORMAL = "normal"
-    LOW = "low"
+    HIGH = "HIGH"
+    NORMAL = "NORMAL"
+    LOW = "LOW"
 
 
 class Notification(Base):
-    """Notification model for alerts"""
-
     __tablename__ = "notifications"
 
-    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = Column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    type: NotificationType = Column(Enum(NotificationType), nullable=False)
-    title: str = Column(String, nullable=False)
-    message: str = Column(String, nullable=False)
-    priority: NotificationPriority = Column(
-        Enum(NotificationPriority), default=NotificationPriority.NORMAL
-    )
-    data: dict = Column(JSON, nullable=False)
-    is_read: bool = Column(Boolean, default=False)
-    read_at: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
-    created_at: datetime = Column(
-        DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc)
+    type = Column(Enum(NotificationType), nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    priority = Column(Enum(NotificationPriority), default=NotificationPriority.NORMAL)
+    data = Column(JSON, nullable=False)
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
 
     # Relationships
     user = relationship("User", back_populates="notifications")
 
     def mark_as_read(self) -> None:
-        """Mark the notification as read"""
         self.is_read = True
-        self.read_at = datetime.now(timezone.utc)
+        self.read_at = datetime.utcnow()
 
-    def to_dict(self) -> dict:
-        """Formatting to dict"""
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type,
@@ -75,32 +65,26 @@ class Notification(Base):
             "priority": self.priority,
             "data": self.data,
             "is_read": self.is_read,
-            "read_at": self.read_at,
-            "created_at": self.created_at,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "created_at": self.created_at.isoformat(),
         }
 
 
 class NotificationTemplate(Base):
-    """Template for notifications based on event types"""
-
     __tablename__ = "notification_templates"
 
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    event_type: Mapped[str] = Column(String, nullable=False)
-    title_template: Mapped[str] = Column(String, nullable=False)
-    message_template: Mapped[str] = Column(String, nullable=False)
-    priority: Mapped[NotificationPriority] = Column(
-        Enum(NotificationPriority), default=NotificationPriority.NORMAL
-    )
+    id = Column(Integer, primary_key=True)
+    event_type = Column(String, nullable=False, index=True)
+    title_template = Column(String, nullable=False)
+    message_template = Column(String, nullable=False)
+    priority = Column(Enum(NotificationPriority), default=NotificationPriority.NORMAL)
 
 
 class NotificationPreference(Base):
-    """User preferences for notifications"""
-
     __tablename__ = "notification_preferences"
 
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    user_id: Mapped[int] = Column(ForeignKey("users.id", ondelete="CASCADE"))
-    notification_type: Mapped[NotificationType] = Column(Enum(NotificationType))
-    enabled: Mapped[bool] = Column(Boolean, default=True)
-    email_enabled: Mapped[bool] = Column(Boolean, default=False)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    notification_type = Column(Enum(NotificationType))
+    enabled = Column(Boolean, default=True)
+    email_enabled = Column(Boolean, default=False)
