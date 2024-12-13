@@ -4,7 +4,7 @@ from app.models.notification import Notification
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from .schema import NotificationCreate
+from .schemas import NotificationCreate
 
 
 class NotificationService:

@@ -1,9 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
+from app.models.notification import NotificationPriority, NotificationType
 from pydantic import BaseModel
-
-from backend.app.models.notification import NotificationPriority, NotificationType
 
 
 class NotificationCreate(BaseModel):
