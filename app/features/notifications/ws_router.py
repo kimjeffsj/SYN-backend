@@ -1,7 +1,6 @@
+from app.core.security import get_current_user
+from app.models.user import User
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-
-from backend.app.core.security import get_current_user
-from backend.app.models.user import User
 
 from .ws_manager import notification_manager
 
