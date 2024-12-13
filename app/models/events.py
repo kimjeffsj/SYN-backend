@@ -12,7 +12,7 @@ class EventType(str, Enum):
     ANNOUNCEMENT_CREATED = "announcement_created"
 
 
-class Even:
+class Event:
     def __init__(self, event_type: EventType, data: dict):
         self.type = event_type
         self.data = data
