@@ -78,3 +78,29 @@ class Notification(Base):
             "read_at": self.read_at,
             "created_at": self.created_at,
         }
+
+
+class NotificationTemplate(Base):
+    """Template for notifications based on event types"""
+
+    __tablename__ = "notification_templates"
+
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    event_type: Mapped[str] = Column(String, nullable=False)
+    title_template: Mapped[str] = Column(String, nullable=False)
+    message_template: Mapped[str] = Column(String, nullable=False)
+    priority: Mapped[NotificationPriority] = Column(
+        Enum(NotificationPriority), default=NotificationPriority.NORMAL
+    )
+
+
+class NotificationPreference(Base):
+    """User preferences for notifications"""
+
+    __tablename__ = "notification_preferences"
+
+    id: Mapped[int] = Column(Integer, primary_key=True)
+    user_id: Mapped[int] = Column(ForeignKey("users.id", ondelete="CASCADE"))
+    notification_type: Mapped[NotificationType] = Column(Enum(NotificationType))
+    enabled: Mapped[bool] = Column(Boolean, default=True)
+    email_enabled: Mapped[bool] = Column(Boolean, default=False)
