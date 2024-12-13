@@ -11,25 +11,46 @@ if TYPE_CHECKING:
 
 
 class Announcement(Base):
-    """Announcement model for notices"""
-
     __tablename__ = "announcements"
 
-    id: Mapped[int] = Column(Integer, primary_key=True)
-    title: Mapped[str] = Column(String)
-    content: Mapped[str] = Column(String)
-    priority: Mapped[str] = Column(String, default="normal")  # normal, high
-    created_by: Mapped[int] = Column(ForeignKey("users.id", ondelete="SET NULL"))
-    created_at: Mapped[datetime] = Column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = Column(
-        DateTime(timezone=True), onupdate=func.now()
-    )
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    priority = Column(String, default="normal")  # normal, high
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    read_by: Mapped[List["User"]] = relationship(
+    author = relationship("User", foreign_keys=[created_by], backref="announcements")
+    read_by = relationship(
         "User", secondary="announcement_reads", backref="read_announcements"
     )
+
+    @property
+    def read_count(self) -> int:
+        return len(self.read_by)
+
+    def is_read_by(self, user_id: int) -> bool:
+        return any(user.id == user_id for user in self.read_by)
+
+    def to_response(self, user_id: int = None) -> dict:
+        """Convert to response format"""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "priority": self.priority,
+            "created_by": self.created_by,
+            "author": {
+                "id": self.author.id if self.author else None,
+                "name": self.author.full_name if self.author else None,
+                "position": self.author.position if self.author else None,
+            },
+            "read_count": self.read_count,
+            "is_read": self.is_read_by(user_id) if user_id else False,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 class AnnouncementRead(Base):

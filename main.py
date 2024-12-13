@@ -1,6 +1,7 @@
 from app.core.config import settings
 from app.core.database import engine
 from app.features.admin_dashboard import router as admin_dashboard_router
+from app.features.announcements import router as announcement_router
 from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.schedule import admin_router as schedule_admin_router
@@ -30,6 +31,10 @@ app = FastAPI(
         {
             "name": "Dashboard",
             "description": "Dashboard views and operations for both admin and employees",
+        },
+        {
+            "name": "Announcements",
+            "description": "System announcements and notifications",
         },
     ],
 )
@@ -61,6 +66,8 @@ app.include_router(
 )
 
 app.include_router(shift_trade_router, prefix="/trades", tags=["Shift Trade"])
+
+app.include_router(announcement_router, prefix="/announcements", tags=["Announcements"])
 
 
 @app.get("/")
