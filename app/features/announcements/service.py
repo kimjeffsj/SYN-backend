@@ -11,6 +11,28 @@ from sqlalchemy.orm import Session
 
 class AnnouncementService:
     @staticmethod
+    async def format_announcement(announcement: Announcement, user_id: int) -> dict:
+        """Format announcement for response"""
+        return {
+            "id": announcement.id,
+            "title": announcement.title,
+            "content": announcement.content,
+            "priority": announcement.priority,
+            "created_by": announcement.created_by,
+            "author": {
+                "id": announcement.author.id if announcement.author else None,
+                "name": announcement.author.full_name if announcement.author else None,
+                "position": (
+                    announcement.author.position if announcement.author else None
+                ),
+            },
+            "read_count": announcement.read_count,
+            "is_read": announcement.is_read_by(user_id),
+            "created_at": announcement.created_at,
+            "updated_at": announcement.updated_at,
+        }
+
+    @staticmethod
     async def get_announcements(
         db: Session,
         user_id: int,
@@ -42,7 +64,13 @@ class AnnouncementService:
             .all()
         )
 
-        return {"items": announcements, "total": total, "unread": unread}
+        # Format each announcement
+        items = [
+            await AnnouncementService.format_announcement(ann, user_id)
+            for ann in announcements
+        ]
+
+        return {"items": items, "total": total, "unread": unread}
 
     @staticmethod
     async def get_announcement(db: Session, announcement_id: int, user_id: int):
@@ -77,7 +105,22 @@ class AnnouncementService:
             db.add(announcement)
             db.commit()
             db.refresh(announcement)
-            return announcement
+            return {
+                "id": announcement.id,
+                "title": announcement.title,
+                "content": announcement.content,
+                "priority": announcement.priority,
+                "created_by": announcement.created_by,
+                "author": {
+                    "id": announcement.author.id,
+                    "name": announcement.author.full_name,
+                    "position": announcement.author.position,
+                },
+                "read_count": 0,
+                "is_read": False,
+                "created_at": announcement.created_at,
+                "updated_at": announcement.updated_at,
+            }
         except Exception as e:
             db.rollback()
             raise HTTPException(

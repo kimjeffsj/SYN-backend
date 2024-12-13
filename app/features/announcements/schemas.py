@@ -20,7 +20,7 @@ class AnnouncementUpdate(AnnouncementBase):
 
 class AnnouncementResponse(AnnouncementBase):
     id: int
-    create_by: int
+    created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     author: dict
