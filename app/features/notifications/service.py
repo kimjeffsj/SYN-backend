@@ -1,8 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
-from app.models.notification import Notification
+from app.models.notification import Notification, NotificationType
 from fastapi import HTTPException
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
+
+from backend.app.models.user import User
 
 from .schemas import NotificationCreate
 
@@ -96,4 +100,102 @@ class NotificationService:
             raise HTTPException(
                 status_code=500,
                 detail=f"Could not mark all notifications as read: {str(e)}",
+            )
+
+    @staticmethod
+    async def get_pending_notifications(
+        db: Session,
+        user_id: int,
+        days: int = 15,
+        notification_types: Optional[List[NotificationType]] = None,
+    ) -> List[Notification]:
+        """Get pending notifications for user when login"""
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days)
+
+            query = db.query(Notification).filter(
+                and_(
+                    Notification.user_id == user_id,
+                    Notification.created_at >= cutoff_date,
+                    Notification.is_read == False,
+                    Notification.deleted_at.is_(None),
+                )
+            )
+
+            if notification_types:
+                query = query.filter(Notification.type.in_(notification_types))
+
+            notifications = query.order_by(
+                Notification.priority.desc(), Notification.created_at.desc()
+            ).all()
+
+            return notifications
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch pending notifications: {str(e)}",
+            )
+
+    @staticmethod
+    async def get_notification_summary(db: Session, user_id: int) -> dict:
+        """Get notification summary for dashboard"""
+        try:
+            base_query = db.query(Notification).filter(
+                Notification.user_id == user_id, Notification.deleted_at.is_(None)
+            )
+
+            total_unread = base_query.filter(Notification.is_read == False).count()
+
+            type_summary = {}
+            for ntype in Notification:
+                count = base_query.filter(
+                    Notification.type == ntype, Notification.is_read == False
+                ).count()
+                type_summary[ntype.value] = count
+
+            return {"total_unread": total_unread, "type_summary": type_summary}
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get notification summary: {str(e)}"
+            )
+
+    @staticmethod
+    async def handle_user_login(db: Session, user: User) -> dict:
+        """Handle notifications when user logs in"""
+        try:
+
+            notifications = await NotificationService.get_pending_notifications(
+                db, user.id
+            )
+
+            summary = await NotificationService.get_notification_summary(db, user.id)
+
+            notification_data = {
+                "notifications": [n.to_dict() for n in notifications],
+                "summary": summary,
+                "has_critical": any(n.priority == "HIGH" for n in notifications),
+            }
+
+            return notification_data
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to process login notifications: {str(e)}",
+            )
+
+    @staticmethod
+    async def update_user_last_seen(db: Session, user_id: int) -> None:
+        """Update user's last seen timestamp"""
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                user.last_active_at = datetime.now()
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500, detail=f"Failed to update last seen time: {str(e)}"
             )

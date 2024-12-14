@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from .ws_manager import notification_manager
+from ..ws_manager import notification_manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
