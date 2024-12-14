@@ -105,6 +105,25 @@ async def get_current_admin_user(
     return current_user
 
 
+async def get_user_from_token(token: str, db: Session) -> Optional[User]:
+    """
+    Validate token and return user
+    """
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        email: str = payload.get("sub")
+        if not email:
+            return None
+
+        user = db.query(User).filter(User.email == email).first()
+        return user
+
+    except JWTError:
+        return None
+
+
 # Token blacklist (In-memory storage - Consider using Redis in production)
 token_blacklist = set()
 

@@ -1,12 +1,9 @@
-from typing import Optional
-
 from app.core.events.base import Event
 from app.features.notifications.ws_manager import notification_manager
 from app.models.notification import Notification, NotificationPriority, NotificationType
+from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
-from backend.app.models.user import User
 
 
 async def handle_schedule_update_notification(event: Event, db: Session) -> None:

@@ -6,6 +6,7 @@ from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.notifications import router as notification_router
 from app.features.notifications import ws_router
+from app.features.notifications.ws_manager import notification_manager
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
 from app.features.shift_trade import router as shift_trade_router
@@ -92,3 +93,13 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.on_event("startup")
+async def startup_event():
+    await notification_manager.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await notification_manager.stop()

@@ -1,67 +1,17 @@
+import json
 import logging
+from datetime import datetime
+from typing import Optional
 
-from app.core.config import settings
-from app.core.database import SessionLocal
-from app.models.user import User
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
-from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.core.security import get_user_from_token
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from ..ws_manager import notification_manager
+from .connection import WebSocketConnection
+from .protocols import WSMessage, WSMessageType, WSProtocol
 
-router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-async def get_user_from_token(token: str, db: Session) -> User | None:
-    """Validate token and return user"""
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        email: str = payload.get("sub")
-        if not email:
-            return None
-
-        user = db.query(User).filter(User.email == email).first()
-        return user
-    except JWTError:
-        return None
-
-
-@router.websocket("/notifications/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: int):
-    db = SessionLocal()
-    try:
-        # WebSocket accept
-        await websocket.accept()
-
-        # Token validate
-        params = dict(websocket.query_params)
-        token = params.get("token")
-        if not token:
-            await websocket.close(code=4000)
-            return
-
-        # Auth user
-        user = await get_user_from_token(token, db)
-        if not user or str(user.id) != str(user_id):
-            await websocket.close(code=4001)
-            return
-
-        # Keep Connection
-        while True:
-            try:
-                data = await websocket.receive_text()
-                if data == "ping":
-                    await websocket.send_text("pong")
-            except WebSocketDisconnect:
-                break
-
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-    finally:
-        db.close()
+router = APIRouter()
 
 
 @router.websocket("/notifications/{user_id}")
@@ -70,51 +20,100 @@ async def notification_websocket(
     user_id: int,
     token: str = Query(...),
 ):
-    db = SessionLocal()
+    db = get_db()
+    connection: Optional[WebSocketConnection] = None
+
     try:
-        try:
-            payload = jwt.decode(
-                token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-            )
-            email = payload.get("sub")
-            if not email:
-                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-                return
-        except JWTError as e:
-            logger.error(f"JWT validation failed: {str(e)}")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        # Validate token and get user
+        db_session = next(db)
+        user = await get_user_from_token(token, db_session)
+
+        if not user or user.id != user_id:
+            await websocket.close(code=4001)  # Unauthorized
             return
 
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            logger.error(f"User not found for email: {email}")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+        # Initialize connection and protocol
+        connection = WebSocketConnection(websocket, user)
+        protocol = WSProtocol(connection)
 
-        if user.id != user_id:
-            logger.error(
-                f"User ID mismatch: token user {user.id} != requested {user_id}"
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
+        # Establish connection
+        await connection.connect()
 
-        await websocket.accept()
-        await notification_manager.connect(user_id, websocket)
-
+        # Main message loop
         try:
             while True:
                 data = await websocket.receive_text()
-                if data == "ping":
-                    await websocket.send_text("pong")
-                    continue
+                await protocol.handle_message(data)
 
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected for user {user_id}")
-        finally:
-            await notification_manager.handle_disconnect(user_id)
 
     except Exception as e:
-        logger.error(f"Error in WebSocket connection: {str(e)}")
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        logger.error(f"WebSocket error for user {user_id}: {str(e)}")
+        if connection and connection.is_alive():
+            await connection.handle_error(e)
+
     finally:
-        db.close()
+        if connection:
+            await connection.disconnect()
+        db_session.close()
+
+
+@router.websocket("/events/{user_id}")
+async def events_websocket(
+    websocket: WebSocket,
+    user_id: int,
+    token: str = Query(...),
+):
+    db = get_db()
+    connection: Optional[WebSocketConnection] = None
+
+    try:
+        # Validate token and get user
+        db_session = next(db)
+        user = await get_user_from_token(token, db_session)
+
+        if not user or user.id != user_id:
+            await websocket.close(code=4001)
+            return
+
+        # Initialize connection
+        connection = WebSocketConnection(websocket, user)
+        protocol = WSProtocol(connection)
+
+        # Register event handlers
+        # TODO: Add specific event handlers here
+
+        # Establish connection
+        await connection.connect()
+
+        # Send initial state if needed
+        welcome_message = WSMessage(
+            type=WSMessageType.EVENT, payload={"message": "Connected to event stream"}
+        )
+        await protocol.send_message(welcome_message)
+
+        # Main message loop
+        try:
+            while True:
+                data = await websocket.receive_text()
+                await protocol.handle_message(data)
+
+        except WebSocketDisconnect:
+            logger.info(f"Event WebSocket disconnected for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Event WebSocket error for user {user_id}: {str(e)}")
+        if connection and connection.is_alive():
+            await connection.handle_error(e)
+
+    finally:
+        if connection:
+            await connection.disconnect()
+        db_session.close()
+
+
+@router.get("/health")
+async def websocket_health():
+    """Health check endpoint for WebSocket service"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}

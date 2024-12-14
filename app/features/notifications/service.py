@@ -2,11 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from app.models.notification import Notification, NotificationType
+from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
-
-from backend.app.models.user import User
 
 from .schemas import NotificationCreate
 
