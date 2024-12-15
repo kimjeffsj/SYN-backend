@@ -27,8 +27,12 @@ celery_app.conf.update(
 
 
 celery_app.conf.beat_schedule = {
+    "retry-failed-notifications": {
+        "task": "notifications.retry_failed",
+        "schedule": 300.0,  # 5 minutes
+    },
     "cleanup-old-notifications": {
-        "task": "app.features.notifications.tasks.cleanup_old_notifications",
-        "schedule": 86400.0,
+        "task": "notifications.cleanup_old",
+        "schedule": 86400.0,  # 24 hours
     },
 }

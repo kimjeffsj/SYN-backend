@@ -1,163 +1,196 @@
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
-from app.core.database import SessionLocal
 from app.core.events.base import Event
-from app.core.events.bus import event_bus
-from app.models.notification import NotificationPriority, NotificationType
+from app.features.notifications.ws_manager import notification_manager
+from app.models.notification import (
+    Notification,
+    NotificationPriority,
+    NotificationStatus,
+    NotificationType,
+)
 from app.models.user import User
+from fastapi import HTTPException, logger
+from sqlalchemy.orm import Session
 
-from ..service import NotificationService
-from ..ws_manager import notification_manager
-from .types import NotificationEventType
+logger = logging.getLogger(__name__)
 
 
-async def handle_schedule_update(event: Event):
-    """Handle schedule update event"""
-    db = SessionLocal()
+async def handle_schedule_update_notification(event: Event, db: Session) -> None:
+    """Handle Schedule Update Notification"""
     try:
+        schedule = event.data.get("schedule")
+        notification = event.data.get("notification")
+
+        # Check if notification already exists in event data
+        if not notification:
+            notification_data = {
+                "user_id": schedule.user_id,
+                "type": NotificationType.SCHEDULE_CHANGE,
+                "title": "Schedule Updated",
+                "message": f"Your schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been updated",
+                "priority": NotificationPriority.HIGH,
+                "data": {
+                    "schedule_id": schedule.id,
+                    "date": schedule.start_time.strftime("%Y-%m-%d"),
+                    "time": f"{schedule.start_time.strftime('%H:%M')}-{schedule.end_time.strftime('%H:%M')}",
+                    "status": schedule.status.value,
+                },
+                "status": "PENDING",
+            }
+
+            notification = Notification(**notification_data)
+            db.add(notification)
+            await db.flush()
+
+        # Send real-time notification
+        sent = await notification_manager.send_notification(
+            schedule.user_id, notification.to_dict()
+        )
+
+        if sent:
+            notification.status = "sent"
+            notification.sent_at = datetime.now(timezone.utc)
+
+        await db.commit()
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process schedule update notification: {str(e)}",
+        )
+
+
+async def handle_trade_response_notification(event: Event, db: Session) -> None:
+    """Shift Trade notification"""
+    try:
+        response = event.data.get("response")
+        trade_request = event.data.get("trade_request")
+
+        if not response or not trade_request:
+            return
+
         notification_data = {
-            "user_id": event.data["user_id"],
-            "type": NotificationType.SCHEDULE_CHANGE,
-            "title": "Schedule Updated",
-            "message": f"Your schedule for {event.data['date']} has been updated",
+            "user_id": trade_request.author_id,
+            "type": NotificationType.SHIFT_TRADE,
+            "title": "New Response to Your Trade Request",
+            "message": f"{response.respondent.full_name} has responded to your shift trade request",
             "priority": NotificationPriority.HIGH,
             "data": {
-                "schedule_id": event.data.get("schedule_id"),
-                "old_time": event.data.get("old_time"),
-                "new_time": event.data.get("new_time"),
-                "date": event.data["date"],
+                "trade_id": trade_request.id,
+                "response_id": response.id,
+                "respondent": {
+                    "id": response.respondent.id,
+                    "name": response.respondent.full_name,
+                    "position": response.respondent.position,
+                },
+                "offered_shift": {
+                    "date": response.offered_shift.start_time.strftime("%Y-%m-%d"),
+                    "time": (
+                        f"{response.offered_shift.start_time.strftime('%H:%M')}-"
+                        f"{response.offered_shift.end_time.strftime('%H:%M')}"
+                    ),
+                },
             },
         }
 
-        notification = await NotificationService.create_notification(
-            db, notification_data
+        async with db.begin():
+            notification = Notification(**notification_data)
+            db.add(notification)
+            await db.flush()
+
+            sent = await notification_manager.send_notification(
+                trade_request.author_id, notification.to_dict()
+            )
+
+            if sent:
+                notification.status = "sent"
+                notification.sent_at = datetime.now(timezone.utc)
+
+        await db.commit()
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process trade response notification: {str(e)}",
         )
-        await notification_manager.send_notification(
-            notification.user_id, notification.to_dict()
-        )
-
-    finally:
-        db.close()
 
 
-async def handle_announcement_created(event: Event):
-    """Handle new announcement event"""
-    db = SessionLocal()
+async def handle_new_announcement_notification(event: Event, db: Session) -> None:
+    logger.info("Starting announcement notification handler")
     try:
         announcement = event.data.get("announcement")
+        logger.info(
+            f"Processing announcement: {announcement.id if announcement else 'None'}"
+        )
+
         if not announcement:
+            logger.error("No announcement data in event")
             return
 
         users = db.query(User).filter(User.is_active == True).all()
+        logger.info(f"Found {len(users)} active users")
 
         for user in users:
-            notification_data = {
-                "user_id": user.id,
-                "type": NotificationType.ANNOUNCEMENT,
-                "title": "New Announcement",
-                "message": announcement.title,
-                "priority": announcement.priority,
-                "data": {
-                    "announcement_id": announcement.id,
-                    "title": announcement.title,
-                    "content": announcement.content,
-                    "author": announcement.author.full_name,
-                },
-            }
+            try:
+                notification_data = {
+                    "user_id": user.id,
+                    "type": NotificationType.ANNOUNCEMENT,
+                    "title": "New announcement posted",
+                    "message": announcement.title,
+                    "priority": (
+                        NotificationPriority.HIGH
+                        if announcement.priority == "high"
+                        else NotificationPriority.NORMAL
+                    ),
+                    "data": {
+                        "announcement_id": announcement.id,
+                        "title": announcement.title,
+                        "preview": (
+                            announcement.content[:100] + "..."
+                            if len(announcement.content) > 100
+                            else announcement.content
+                        ),
+                        "author": {
+                            "id": announcement.author.id,
+                            "name": announcement.author.full_name,
+                            "position": announcement.author.position,
+                        },
+                    },
+                    "status": NotificationStatus.PENDING,
+                }
 
-            notification = await NotificationService.create_notification(
-                db, notification_data
-            )
-            await notification_manager.send_notification(
-                user.id, notification.to_dict()
-            )
+                notification = Notification(**notification_data)
+                db.add(notification)
+                await db.flush()
 
-    finally:
-        db.close()
+                # notification_manager가 None인지 체크
+                if notification_manager:
+                    sent = await notification_manager.send_notification(
+                        user.id, notification.to_dict()
+                    )
+                    if sent:
+                        notification.status = NotificationStatus.SENT
+                        notification.sent_at = datetime.now(timezone.utc)
+                else:
+                    logger.error("notification_manager is not initialized")
+                    notification.status = NotificationStatus.FAILED
+                    notification.error_message = "Notification manager not available"
 
+            except Exception as e:
+                logger.error(
+                    f"Error processing notification for user {user.id}: {str(e)}"
+                )
+                continue
 
-async def handle_shift_trade_requested(event: Event):
-    """Handle shift trade request event"""
-    db = SessionLocal()
-    try:
-        trade = event.data.get("trade")
-        if not trade:
-            return
+        await db.commit()
 
-        notification_data = {
-            "user_id": trade.target_user_id,
-            "type": NotificationType.SHIFT_TRADE,
-            "title": "New Shift Trade Request",
-            "message": f"{trade.author.full_name} wants to trade shifts with you",
-            "priority": NotificationPriority.NORMAL,
-            "data": {
-                "trade_id": trade.id,
-                "requester": trade.author.full_name,
-                "original_shift": {
-                    "date": trade.original_shift.start_time.strftime("%Y-%m-%d"),
-                    "time": f"{trade.original_shift.start_time.strftime('%H:%M')} - {trade.original_shift.end_time.strftime('%H:%M')}",
-                },
-                "preferred_shift": (
-                    {
-                        "date": trade.preferred_shift.start_time.strftime("%Y-%m-%d"),
-                        "time": f"{trade.preferred_shift.start_time.strftime('%H:%M')} - {trade.preferred_shift.end_time.strftime('%H:%M')}",
-                    }
-                    if trade.preferred_shift
-                    else None
-                ),
-            },
-        }
-
-        notification = await NotificationService.create_notification(
-            db, notification_data
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error in handle_new_announcement_notification: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process announcement notification: {str(e)}",
         )
-        await notification_manager.send_notification(
-            notification.user_id, notification.to_dict()
-        )
-
-    finally:
-        db.close()
-
-
-async def handle_leave_request(event: Event):
-    """Handle leave request event"""
-    db = SessionLocal()
-    try:
-        request = event.data.get("request")
-        if not request:
-            return
-
-        # Notify admin
-        notification_data = {
-            "user_id": request.approver_id,
-            "type": NotificationType.LEAVE_REQUEST,
-            "title": "New Leave Request",
-            "message": f"{request.user.full_name} has requested leave",
-            "priority": NotificationPriority.NORMAL,
-            "data": {
-                "request_id": request.id,
-                "user": request.user.full_name,
-                "start_date": request.start_date.strftime("%Y-%m-%d"),
-                "end_date": request.end_date.strftime("%Y-%m-%d"),
-                "reason": request.reason,
-            },
-        }
-
-        notification = await NotificationService.create_notification(
-            db, notification_data
-        )
-        await notification_manager.send_notification(
-            notification.user_id, notification.to_dict()
-        )
-
-    finally:
-        db.close()
-
-
-# Register all event handlers
-event_bus.subscribe(NotificationEventType.SCHEDULE_UPDATED, handle_schedule_update)
-event_bus.subscribe(
-    NotificationEventType.ANNOUNCEMENT_CREATED, handle_announcement_created
-)
-event_bus.subscribe(NotificationEventType.TRADE_REQUESTED, handle_shift_trade_requested)
-event_bus.subscribe(NotificationEventType.LEAVE_REQUESTED, handle_leave_request)

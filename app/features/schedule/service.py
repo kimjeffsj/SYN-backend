@@ -1,13 +1,14 @@
 from datetime import datetime
 from typing import List, Optional
 
+from app.core.events import Event, event_bus
+from app.features.notifications.events.types import NotificationEventType
+from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-
-from .schemas import ScheduleCreate, ScheduleSearchParams
 
 
 class ScheduleService:
@@ -57,7 +58,9 @@ class ScheduleService:
         return query.order_by(Schedule.start_time.desc()).all()
 
     @staticmethod
-    def create_schedule(db: Session, schedule_data: dict, created_by: int) -> Schedule:
+    async def create_schedule(
+        db: Session, schedule_data: dict, created_by: int
+    ) -> Schedule:
         """Create a single schedule"""
         if schedule_data["start_time"] >= schedule_data["end_time"]:
             raise HTTPException(
@@ -72,6 +75,33 @@ class ScheduleService:
             db.add(schedule)
             db.commit()
             db.refresh(schedule)
+
+            # Create notification for the employee
+            notification = Notification(
+                user_id=schedule.user_id,
+                type=NotificationType.SCHEDULE_CHANGE,
+                title="New Schedule Assignment",
+                message=f"New schedule assigned for {schedule.start_time.strftime('%Y-%m-%d')}",
+                priority=NotificationPriority.NORMAL,
+                data={
+                    "schedule_id": schedule.id,
+                    "start_time": schedule.start_time.isoformat(),
+                    "end_time": schedule.end_time.isoformat(),
+                    "shift_type": schedule.shift_type.value,
+                },
+            )
+
+            db.add(notification)
+            db.commit()
+
+            # Event for real-time notification
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.SCHEDULE_UPDATED,
+                    data={"schedule": schedule, "notification": notification.to_dict()},
+                )
+            )
+
             return schedule
 
         except Exception as e:
@@ -81,9 +111,19 @@ class ScheduleService:
             )
 
     @staticmethod
-    def update_schedule(db: Session, schedule_id: int, schedule_data: dict) -> Schedule:
+    async def update_schedule(
+        db: Session, schedule_id: int, schedule_data: dict
+    ) -> Schedule:
         """Update schedule details"""
         schedule = ScheduleService.get_schedule(db, schedule_id)
+
+        # Store original data for notification
+        original_data = {
+            "start_time": schedule.start_time.isoformat(),
+            "end_time": schedule.end_time.isoformat(),
+            "shift_type": schedule.shift_type.value,
+            "status": schedule.status.value,
+        }
 
         try:
             for key, value in schedule_data.items():
@@ -91,6 +131,37 @@ class ScheduleService:
 
             db.commit()
             db.refresh(schedule)
+
+            # Create notification for schedule update
+            notification = Notification(
+                user_id=schedule.user_id,
+                type=NotificationType.SCHEDULE_CHANGE,
+                title="Schedule Updated",
+                message=f"Your schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been updated",
+                priority=NotificationPriority.HIGH,
+                data={
+                    "schedule_id": schedule.id,
+                    "original": original_data,
+                    "updated": {
+                        "start_time": schedule.start_time.isoformat(),
+                        "end_time": schedule.end_time.isoformat(),
+                        "shift_type": schedule.shift_type.value,
+                        "status": schedule.status.value,
+                    },
+                    "changes": schedule_data,
+                },
+            )
+            db.add(notification)
+            db.commit()
+
+            # Event for real-time notification
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.SCHEDULE_UPDATED,
+                    data={"schedule": schedule, "notification": notification.to_dict()},
+                )
+            )
+
             return schedule
 
         except Exception as e:
@@ -105,8 +176,22 @@ class ScheduleService:
         schedule = ScheduleService.get_schedule(db, schedule_id)
 
         try:
+            notification = Notification(
+                user_id=schedule.user_id,
+                type=NotificationType.SCHEDULE_CHANGE,
+                title="Schedule Deleted",
+                message=f"Schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been deleted",
+                priority=NotificationPriority.HIGH,
+                data={
+                    "schedule_id": schedule.id,
+                    "date": schedule.start_time.strftime("%Y-%m-%d"),
+                },
+            )
+            db.add(notification)
+
             db.delete(schedule)
             db.commit()
+
             return {"message": "Schedule deleted successfully"}
 
         except Exception as e:
@@ -116,16 +201,42 @@ class ScheduleService:
             )
 
     @staticmethod
-    def update_schedule_status(
+    async def update_schedule_status(
         db: Session, schedule_id: int, new_status: str
     ) -> Schedule:
         """Update schedule status"""
         schedule = ScheduleService.get_schedule(db, schedule_id)
+        old_status = schedule.status
 
         try:
             schedule.status = new_status
+
+            notification = Notification(
+                user_id=schedule.user_id,
+                type=NotificationType.SCHEDULE_CHANGE,
+                title="Schedule Status Updated",
+                message=f"Your schedule status has been updated to {new_status}",
+                priority=NotificationPriority.NORMAL,
+                data={
+                    "schedule_id": schedule.id,
+                    "old_status": old_status.value,
+                    "new_status": new_status,
+                    "date": schedule.start_time.strftime("%Y-%m-%d"),
+                },
+            )
+            db.add(notification)
+
             db.commit()
             db.refresh(schedule)
+
+            # Event for real-time notification
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.SCHEDULE_UPDATED,
+                    data={"schedule": schedule, "notification": notification.to_dict()},
+                )
+            )
+
             return schedule
 
         except Exception as e:

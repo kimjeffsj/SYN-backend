@@ -1,12 +1,18 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
+from app.core.events import event_bus
+from app.core.events.base import Event
 from app.features.announcements.schemas import AnnouncementCreate, AnnouncementUpdate
+from app.features.notifications.events.types import NotificationEventType
 from app.models import Announcement
 from app.models.announcement import AnnouncementRead
 from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class AnnouncementService:
@@ -97,13 +103,24 @@ class AnnouncementService:
         db: Session, announcement_data: AnnouncementCreate, created_by: int
     ):
         """Create a new announcement"""
+        print("announcement created")
         announcement = Announcement(
             **announcement_data.model_dump(), created_by=created_by
         )
+        db.add(announcement)
+        db.commit()
+        db.refresh(announcement)
+
+        logger.info(f"Attempting to publish announcement event: {announcement.id}")
+        await event_bus.publish(
+            Event(
+                type=NotificationEventType.ANNOUNCEMENT_CREATED,
+                data={"announcement": announcement, "author": announcement.author},
+            )
+        )
+        logger.info(f"Successfully published announcement event: {announcement.id}")
 
         try:
-            db.add(announcement)
-            db.commit()
             db.refresh(announcement)
             return {
                 "id": announcement.id,
