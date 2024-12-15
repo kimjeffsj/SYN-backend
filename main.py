@@ -1,11 +1,15 @@
+from contextlib import asynccontextmanager
+
 from app.core.config import settings
 from app.core.database import engine
+from app.core.events import event_bus
 from app.features.admin_dashboard import router as admin_dashboard_router
 from app.features.announcements import router as announcement_router
 from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.notifications import router as notification_router
 from app.features.notifications import ws_router
+from app.features.notifications.events import register_notification_handlers  # 추가
 from app.features.notifications.ws_manager import notification_manager
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
@@ -17,10 +21,24 @@ from fastapi.middleware.cors import CORSMiddleware
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+
+#
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Execute the code start up
+    register_notification_handlers(event_bus)
+
+    await notification_manager.start()
+    yield
+    # Execute the code shutdown
+    await notification_manager.stop()
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
+    lifespan=lifespan,
     openapi_tags=[
         {"name": "Auth", "description": "Authentication and authorization operations"},
         {
@@ -93,13 +111,3 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
-
-
-@app.on_event("startup")
-async def startup_event():
-    await notification_manager.start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await notification_manager.stop()

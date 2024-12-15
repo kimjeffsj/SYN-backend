@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from app.models.user import User
 from fastapi import WebSocket
@@ -25,6 +25,7 @@ class WebSocketConnection:
         user: User,
         ping_interval: int = 30,
         ping_timeout: int = 10,
+        max_reconnect_attempts: int = 5,
     ):
         self.websocket = websocket
         self.user = user
@@ -34,13 +35,21 @@ class WebSocketConnection:
         self.ping_interval = ping_interval
         self.ping_timeout = ping_timeout
         self.error: Optional[str] = None
+        self.pending_notifications: List[Dict[str, Any]] = []
+        self.connected_handlers: Set[Callable] = set()
+        self.disconnected_handlers: Set[Callable] = set()
 
     async def connect(self) -> bool:
         """Establish WebSocket connection"""
         try:
             await self.websocket.accept()
             self.state = ConnectionState.CONNECTED
+            self.reconnect_attempts = 0
             logger.info(f"WebSocket connected for user {self.user.id}")
+
+            for handler in self.connected_handlers:
+                await handler(self.user.id)
+
             return True
         except Exception as e:
             self.state = ConnectionState.ERROR
@@ -53,16 +62,42 @@ class WebSocketConnection:
     async def disconnect(self, code: int = 1000) -> None:
         """Close WebSocket connection"""
         try:
-            self.state = ConnectionState.DISCONNECTING
-            await self.websocket.close(code=code)
+            self.state = ConnectionState.DISCONNECTED
+            await self.websocket.close()
+
+            for handler in self.disconnected_handlers:
+                await handler(self.user.id)
+
         except Exception as e:
-            logger.error(f"Error closing WebSocket for user {self.user.id}: {str(e)}")
+            logger.error(f"Error closing WebSocket: {str(e)}")
         finally:
             self.state = ConnectionState.DISCONNECTED
+
+    async def reconnect(self) -> bool:
+        """Reconnect WebSocket connection"""
+        if self.reconnect_attempts >= self.max_reconnect_attempts:
+            logger.error(f"Max reconnection attempts reached for user {self.user.id}")
+            return False
+
+        try:
+            self.reconnect_attempts += 1
+            success = await self.connect()
+
+            if success:
+
+                await self.process_pending_notifications()
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Reconnection failed for user {self.user.id}: {str(e)}")
+            return False
 
     async def send_notification(self, notification: Dict[str, Any]) -> bool:
         """Send notification to client"""
         if self.state != ConnectionState.CONNECTED:
+            self.pending_notifications.append(notification)
             return False
 
         try:
@@ -95,6 +130,15 @@ class WebSocketConnection:
             await self.handle_error(e)
             return False
 
+    async def process_pending_notifications(self) -> None:
+        """Process pending notifications"""
+        while self.pending_notifications:
+            notification = self.pending_notifications.pop(0)
+            success = await self.send_notification(notification)
+            if not success:
+                self.pending_notifications.insert(0, notification)
+                break
+
     async def handle_pong(self) -> None:
         """Handle pong message from client"""
         self.last_pong = datetime.now()
@@ -123,6 +167,8 @@ class WebSocketConnection:
             "last_pong": self.last_pong.isoformat(),
             "is_alive": self.is_alive(),
             "error": self.error,
+            "pending_notifications": len(self.pending_notifications),
+            "reconnect_attempts": self.reconnect_attempts,
         }
 
     async def handle_message(self, message: str) -> None:
@@ -133,9 +179,19 @@ class WebSocketConnection:
 
             if message_type == "pong":
                 await self.handle_pong()
-            # Add more message type handlers as needed
+            elif message_type == "notification_ack":
+                notification_id = data.get("notification_id")
+                logger.info(
+                    f"Notification {notification_id} acknowledged by user {self.user.id}"
+                )
 
         except json.JSONDecodeError:
             logger.warning(f"Invalid message format from user {self.user.id}")
         except Exception as e:
             await self.handle_error(e)
+
+    def add_connected_handler(self, handler: callable) -> None:
+        self.connected_handlers.add(handler)
+
+    def add_disconnected_handler(self, handler: callable) -> None:
+        self.disconnected_handlers.add(handler)

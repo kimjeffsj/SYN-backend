@@ -1,14 +1,11 @@
-import json
 import logging
 from datetime import datetime
-from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_user_from_token
+from app.features.notifications.service import NotificationService
+from app.features.notifications.ws_manager import notification_manager
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-
-from .connection import WebSocketConnection
-from .protocols import WSMessage, WSMessageType, WSProtocol
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,7 +18,6 @@ async def notification_websocket(
     token: str = Query(...),
 ):
     db = get_db()
-    connection: Optional[WebSocketConnection] = None
 
     try:
         # Validate token and get user
@@ -33,87 +29,43 @@ async def notification_websocket(
             return
 
         # Initialize connection and protocol
-        connection = WebSocketConnection(websocket, user)
-        protocol = WSProtocol(connection)
+        connected = await notification_manager.connect(user, websocket)
+        if not connected:
+            return
 
-        # Establish connection
-        await connection.connect()
-
-        # Main message loop
         try:
+            # 미처리 알림 전송
+            pending_notifications = await NotificationService.get_pending_notifications(
+                db_session, user_id
+            )
+            for notification in pending_notifications:
+                await notification_manager.send_notification(
+                    user_id, notification.to_dict()
+                )
+
             while True:
                 data = await websocket.receive_text()
-                await protocol.handle_message(data)
+                await notification_manager.handle_message(user_id, data)
 
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected for user {user_id}")
 
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {str(e)}")
-        if connection and connection.is_alive():
-            await connection.handle_error(e)
+        if websocket.client_state.connected:
+            await websocket.close(code=1011)
 
     finally:
-        if connection:
-            await connection.disconnect()
-        db_session.close()
-
-
-@router.websocket("/events/{user_id}")
-async def events_websocket(
-    websocket: WebSocket,
-    user_id: int,
-    token: str = Query(...),
-):
-    db = get_db()
-    connection: Optional[WebSocketConnection] = None
-
-    try:
-        # Validate token and get user
-        db_session = next(db)
-        user = await get_user_from_token(token, db_session)
-
-        if not user or user.id != user_id:
-            await websocket.close(code=4001)
-            return
-
-        # Initialize connection
-        connection = WebSocketConnection(websocket, user)
-        protocol = WSProtocol(connection)
-
-        # Register event handlers
-        # TODO: Add specific event handlers here
-
-        # Establish connection
-        await connection.connect()
-
-        # Send initial state if needed
-        welcome_message = WSMessage(
-            type=WSMessageType.EVENT, payload={"message": "Connected to event stream"}
-        )
-        await protocol.send_message(welcome_message)
-
-        # Main message loop
-        try:
-            while True:
-                data = await websocket.receive_text()
-                await protocol.handle_message(data)
-
-        except WebSocketDisconnect:
-            logger.info(f"Event WebSocket disconnected for user {user_id}")
-
-    except Exception as e:
-        logger.error(f"Event WebSocket error for user {user_id}: {str(e)}")
-        if connection and connection.is_alive():
-            await connection.handle_error(e)
-
-    finally:
-        if connection:
-            await connection.disconnect()
+        await notification_manager.disconnect(user_id)
         db_session.close()
 
 
 @router.get("/health")
 async def websocket_health():
     """Health check endpoint for WebSocket service"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    stats = notification_manager.get_connection_stats()
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "connections": stats,
+    }

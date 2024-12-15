@@ -1,69 +1,64 @@
+import logging
+from datetime import datetime, timezone
+
 from app.core.events.base import Event
 from app.features.notifications.ws_manager import notification_manager
-from app.models.notification import Notification, NotificationPriority, NotificationType
+from app.models.notification import (
+    Notification,
+    NotificationPriority,
+    NotificationStatus,
+    NotificationType,
+)
 from app.models.user import User
-from fastapi import HTTPException
+from fastapi import HTTPException, logger
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 async def handle_schedule_update_notification(event: Event, db: Session) -> None:
-    """Handle Schedule Update Notification
-
-    Args:
-        event: Event Data ({
-            "user_id": int,
-            "schedule": Schedule,
-            "changes": dict,
-            "is_new": bool
-        })
-        db: DB Session
-    """
+    """Handle Schedule Update Notification"""
     try:
         schedule = event.data.get("schedule")
-        is_new = event.data.get("is_new", False)
-        changes = event.data.get("changes", {})
+        notification = event.data.get("notification")
 
-        if not schedule:
-            return
-
-        notification_data = {
-            "user_id": schedule.user_id,
-            "type": NotificationType.SCHEDULE_CHANGE,
-            "title": "New Schedule" if is_new else "Schedule Update",
-            "message": (
-                f"A new schedule has been added for {schedule.start_time.strftime('%Y-%m-%d')}"
-                if is_new
-                else f"Your schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been updated"
-            ),
-            "priority": NotificationPriority.HIGH,
-            "data": {
-                "schedule_id": schedule.id,
-                "is_new": is_new,
-                "date": schedule.start_time.strftime("%Y-%m-%d"),
-                "new_time": f"{schedule.start_time.strftime('%H:%M')}-{schedule.end_time.strftime('%H:%M')}",
-                "old_time": changes.get("old_time"),
-                "changed_by": {
-                    "id": schedule.created_by,
-                    "name": schedule.creator.full_name,
-                    "position": schedule.creator.position,
+        # Check if notification already exists in event data
+        if not notification:
+            notification_data = {
+                "user_id": schedule.user_id,
+                "type": NotificationType.SCHEDULE_CHANGE,
+                "title": "Schedule Updated",
+                "message": f"Your schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been updated",
+                "priority": NotificationPriority.HIGH,
+                "data": {
+                    "schedule_id": schedule.id,
+                    "date": schedule.start_time.strftime("%Y-%m-%d"),
+                    "time": f"{schedule.start_time.strftime('%H:%M')}-{schedule.end_time.strftime('%H:%M')}",
+                    "status": schedule.status.value,
                 },
-            },
-        }
+                "status": "PENDING",
+            }
 
-        async with db.begin():
-            # Create notification
             notification = Notification(**notification_data)
             db.add(notification)
             await db.flush()
 
-            await notification_manager.send_notification(
-                schedule.user_id, notification.to_dict()
-            )
+        # Send real-time notification
+        sent = await notification_manager.send_notification(
+            schedule.user_id, notification.to_dict()
+        )
+
+        if sent:
+            notification.status = "sent"
+            notification.sent_at = datetime.now(timezone.utc)
+
+        await db.commit()
 
     except Exception as e:
         db.rollback()
         raise HTTPException(
-            status_code=500, detail=f"Failed to process schedule notification: {str(e)}"
+            status_code=500,
+            detail=f"Failed to process schedule update notification: {str(e)}",
         )
 
 
@@ -105,9 +100,15 @@ async def handle_trade_response_notification(event: Event, db: Session) -> None:
             db.add(notification)
             await db.flush()
 
-            await notification_manager.send_notification(
+            sent = await notification_manager.send_notification(
                 trade_request.author_id, notification.to_dict()
             )
+
+            if sent:
+                notification.status = "sent"
+                notification.sent_at = datetime.now(timezone.utc)
+
+        await db.commit()
 
     except Exception as e:
         db.rollback()
@@ -118,68 +119,77 @@ async def handle_trade_response_notification(event: Event, db: Session) -> None:
 
 
 async def handle_new_announcement_notification(event: Event, db: Session) -> None:
-    """Handle new announcement
-
-    Args:
-        event: 이벤트 데이터 ({
-            "announcement": Announcement,
-            "author": User
-        })
-        db: 데이터베이스 세션
-    """
+    logger.info("Starting announcement notification handler")
     try:
         announcement = event.data.get("announcement")
-        if not announcement:
-            return
-
-        # Check active users
-        users = (
-            db.query(User)
-            .filter(User.is_active == True, User.deleted_at.is_(None))
-            .all()
+        logger.info(
+            f"Processing announcement: {announcement.id if announcement else 'None'}"
         )
 
-        for user in users:
-            notification_data = {
-                "user_id": user.id,
-                "type": NotificationType.ANNOUNCEMENT,
-                "title": "New Announcement Posted",
-                "message": announcement.title,
-                "priority": (
-                    NotificationPriority.HIGH
-                    if announcement.priority == "high"
-                    else NotificationPriority.NORMAL
-                ),
-                "data": {
-                    "announcement_id": announcement.id,
-                    "title": announcement.title,
-                    "preview": (
-                        announcement.content[:100] + "..."
-                        if len(announcement.content) > 100
-                        else announcement.content
-                    ),
-                    "author": {
-                        "id": announcement.author.id,
-                        "name": announcement.author.full_name,
-                        "position": announcement.author.position,
-                    },
-                    "created_at": announcement.created_at.isoformat(),
-                    "priority": announcement.priority,
-                },
-            }
+        if not announcement:
+            logger.error("No announcement data in event")
+            return
 
-            async with db.begin():
-                # Create notification for each user
+        users = db.query(User).filter(User.is_active == True).all()
+        logger.info(f"Found {len(users)} active users")
+
+        for user in users:
+            try:
+                notification_data = {
+                    "user_id": user.id,
+                    "type": NotificationType.ANNOUNCEMENT,
+                    "title": "New announcement posted",
+                    "message": announcement.title,
+                    "priority": (
+                        NotificationPriority.HIGH
+                        if announcement.priority == "high"
+                        else NotificationPriority.NORMAL
+                    ),
+                    "data": {
+                        "announcement_id": announcement.id,
+                        "title": announcement.title,
+                        "preview": (
+                            announcement.content[:100] + "..."
+                            if len(announcement.content) > 100
+                            else announcement.content
+                        ),
+                        "author": {
+                            "id": announcement.author.id,
+                            "name": announcement.author.full_name,
+                            "position": announcement.author.position,
+                        },
+                    },
+                    "status": NotificationStatus.PENDING,
+                }
+
                 notification = Notification(**notification_data)
                 db.add(notification)
                 await db.flush()
 
-                await notification_manager.send_notification(
-                    user.id, notification.to_dict()
+                # notification_manager가 None인지 체크
+                if notification_manager:
+                    sent = await notification_manager.send_notification(
+                        user.id, notification.to_dict()
+                    )
+                    if sent:
+                        notification.status = NotificationStatus.SENT
+                        notification.sent_at = datetime.now(timezone.utc)
+                else:
+                    logger.error("notification_manager is not initialized")
+                    notification.status = NotificationStatus.FAILED
+                    notification.error_message = "Notification manager not available"
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing notification for user {user.id}: {str(e)}"
                 )
+                continue
+
+        await db.commit()
 
     except Exception as e:
-        db.rollback()
+        await db.rollback()
+        logger.error(f"Error in handle_new_announcement_notification: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process announcement notification: {str(e)}",

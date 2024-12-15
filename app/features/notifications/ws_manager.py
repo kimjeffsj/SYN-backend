@@ -6,7 +6,7 @@ from app.features.notifications.ws.connection import (
     ConnectionState,
     WebSocketConnection,
 )
-from app.features.notifications.ws.protocols import WSProtocol
+from app.models.user import User
 from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     def __init__(self, ping_interval: int = 30, cleanup_interval: int = 60):
         self.active_connections: Dict[int, WebSocketConnection] = {}
-        self.protocols: Dict[int, WSProtocol] = {}
         self.ping_interval = ping_interval
         self.cleanup_interval = cleanup_interval
         self._cleanup_task: Optional[asyncio.Task] = None
         self._ping_task: Optional[asyncio.Task] = None
+        self._notification_handlers: Set[callable] = set()
 
     async def start(self) -> None:
         """Start background tasks"""
@@ -40,19 +40,23 @@ class ConnectionManager:
 
         logger.info("Connection manager stopped")
 
-    async def connect(self, user_id: int, websocket: WebSocket) -> bool:
+    async def connect(self, user: User, websocket: WebSocket) -> bool:
         """Establish new WebSocket connection"""
+        user_id = user.id
         try:
             # Disconnect existing connection if any
             if user_id in self.active_connections:
                 await self.disconnect(user_id)
 
-            connection = WebSocketConnection(websocket, user_id)
+            connection = WebSocketConnection(websocket, user)
+
+            connection.add_connected_handler(self._handle_client_connected)
+            connection.add_disconnected_handler(self._handle_client_disconnected)
+
             connected = await connection.connect()
 
             if connected:
                 self.active_connections[user_id] = connection
-                self.protocols[user_id] = WSProtocol(connection)
                 logger.info(f"New connection established for user {user_id}")
                 return True
 
@@ -73,19 +77,26 @@ class ConnectionManager:
                 logger.error(f"Error disconnecting user {user_id}: {str(e)}")
             finally:
                 self.active_connections.pop(user_id, None)
-                self.protocols.pop(user_id, None)
 
     async def send_notification(
         self, user_id: int, notification: Dict[str, Any]
     ) -> bool:
         """Send notification to specific user"""
         if user_id not in self.active_connections:
+            logger.warning(f"No active connection for user {user_id}")
             return False
 
         try:
-            protocol = self.protocols[user_id]
-            await protocol.notify(notification)
-            return True
+            connection = self.active_connections[user_id]
+            sent = await connection.send_notification(notification)
+
+            if not sent and connection.state != ConnectionState.CONNECTED:
+                success = await connection.reconnect()
+                if success:
+                    return await connection.send_notification(notification)
+
+            return sent
+
         except Exception as e:
             logger.error(f"Failed to send notification to user {user_id}: {str(e)}")
             await self.handle_connection_error(user_id, e)
@@ -108,12 +119,7 @@ class ConnectionManager:
     def get_connection_status(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get connection status for a user"""
         if user_id in self.active_connections:
-            connection = self.active_connections[user_id]
-            return {
-                "state": connection.state,
-                "last_activity": connection.last_ping,
-                "is_alive": connection.is_alive(),
-            }
+            return self.active_connections[user_id].get_connection_info()
         return None
 
     async def _cleanup_inactive_connections(self) -> None:
@@ -148,6 +154,32 @@ class ConnectionManager:
             except Exception as e:
                 logger.error(f"Error in ping task: {str(e)}")
                 await asyncio.sleep(self.ping_interval)
+
+    async def _handle_client_connected(self, user_id: int) -> None:
+        """Handle client connection event"""
+        logger.info(f"Client connected: {user_id}")
+        for handler in self._notification_handlers:
+            try:
+                await handler(user_id, "connected")
+            except Exception as e:
+                logger.error(f"Error in connection handler: {str(e)}")
+
+    async def _handle_client_disconnected(self, user_id: int) -> None:
+        """Handle client disconnection event"""
+        logger.info(f"Client disconnected: {user_id}")
+        for handler in self._notification_handlers:
+            try:
+                await handler(user_id, "disconnected")
+            except Exception as e:
+                logger.error(f"Error in disconnection handler: {str(e)}")
+
+    def add_notification_handler(self, handler: callable) -> None:
+        """Add notification handler"""
+        self._notification_handlers.add(handler)
+
+    def remove_notification_handler(self, handler: callable) -> None:
+        """Remove notification handler"""
+        self._notification_handlers.remove(handler)
 
     def get_active_connections_count(self) -> int:
         """Get count of active connections"""

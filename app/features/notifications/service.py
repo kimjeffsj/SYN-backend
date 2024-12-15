@@ -1,30 +1,26 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import List
 
-from app.models.notification import Notification, NotificationType
+from app.models.notification import Notification
 from app.models.user import User
 from fastapi import HTTPException
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-
-from .schemas import NotificationCreate
 
 
 class NotificationService:
     @staticmethod
-    async def create_notification(
-        db: Session, notification_data: NotificationCreate
-    ) -> Notification:
+    async def create_notification(db: Session, notification_data: dict) -> Notification:
         """Create notification"""
         try:
-            notification = Notification(**notification_data.model_dump())
+            notification = Notification(**notification_data)
             db.add(notification)
-            db.commit()
-            db.refresh(notification)
+            await db.commit()
+            await db.refresh(notification)
             return notification
 
         except Exception as e:
-            db.rollback()
+            await db.rollback()
             raise HTTPException(
                 status_code=500, detail=f"Could not create notification: {str(e)}"
             )
@@ -38,12 +34,15 @@ class NotificationService:
         unread_only: bool = False,
     ) -> dict:
         "Get notifications for user"
+        print(f"Fetching notifications for user {user_id}")
+
         query = db.query(Notification).filter(Notification.user_id == user_id)
 
         if unread_only:
             query = query.filter(Notification.is_read == False)
 
         total = query.count()
+        print(f"Found {total} total notifications")
 
         unread = (
             db.query(Notification)
@@ -58,9 +57,11 @@ class NotificationService:
             .all()
         )
 
-        items = [notification.to_dict() for notification in notifications]
-
-        return {"items": items, "total": total, "unread": unread}
+        return {
+            "items": [notification.to_dict() for notification in notifications],
+            "total": total,
+            "unread": unread,
+        }
 
     @staticmethod
     async def mark_as_read(db: Session, notification_id: int, user_id: int) -> bool:
@@ -75,7 +76,8 @@ class NotificationService:
             return False
 
         try:
-            notification.mark_as_read()
+            notification.is_read = True
+            notification.read_at = datetime.now(timezone.utc)
             db.commit()
             return True
         except Exception as e:
@@ -88,10 +90,9 @@ class NotificationService:
     async def mark_all_as_read(db: Session, user_id: int) -> bool:
         """Mark all notifications as read"""
         try:
-            now = datetime.now(timezone.utc)
             db.query(Notification).filter(
                 Notification.user_id == user_id, Notification.is_read == False
-            ).update({"is_read": True, "read_at": now})
+            ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
             db.commit()
             return True
         except Exception as e:
@@ -106,35 +107,23 @@ class NotificationService:
         db: Session,
         user_id: int,
         days: int = 15,
-        notification_types: Optional[List[NotificationType]] = None,
     ) -> List[Notification]:
         """Get pending notifications for user when login"""
-        try:
-            cutoff_date = datetime.now() - timedelta(days=days)
 
-            query = db.query(Notification).filter(
+        cutoff_date = datetime.now() - timedelta(days=days)
+
+        return (
+            db.query(Notification)
+            .filter(
                 and_(
                     Notification.user_id == user_id,
+                    Notification.status == "pending",
                     Notification.created_at >= cutoff_date,
-                    Notification.is_read == False,
-                    Notification.deleted_at.is_(None),
                 )
             )
-
-            if notification_types:
-                query = query.filter(Notification.type.in_(notification_types))
-
-            notifications = query.order_by(
-                Notification.priority.desc(), Notification.created_at.desc()
-            ).all()
-
-            return notifications
-
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to fetch pending notifications: {str(e)}",
-            )
+            .order_by(Notification.priority.desc(), Notification.created_at.desc())
+            .all()
+        )
 
     @staticmethod
     async def get_notification_summary(db: Session, user_id: int) -> dict:
@@ -197,4 +186,47 @@ class NotificationService:
             db.rollback()
             raise HTTPException(
                 status_code=500, detail=f"Failed to update last seen time: {str(e)}"
+            )
+
+    @staticmethod
+    async def get_failed_notifications(db: Session) -> List[Notification]:
+        """Get failed notifications"""
+        return (
+            db.query(Notification)
+            .filter(
+                and_(
+                    Notification.status != "sent",
+                    Notification.retry_count < 5,
+                    or_(
+                        Notification.next_retry.is_(None),
+                        Notification.next_retry <= datetime.now(timezone.utc),
+                    ),
+                )
+            )
+            .all()
+        )
+
+    @staticmethod
+    def cleanup_old_notifications(db: Session, cutoff_date: datetime) -> int:
+        """Cleanup old notifications"""
+        try:
+            deleted = (
+                db.query(Notification)
+                .filter(
+                    and_(
+                        Notification.created_at <= cutoff_date,
+                        or_(
+                            Notification.status == "sent", Notification.retry_count >= 5
+                        ),
+                    )
+                )
+                .delete()
+            )
+
+            db.commit()
+            return deleted
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500, detail=f"Could not cleanup notifications: {str(e)}"
             )
