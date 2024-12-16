@@ -8,6 +8,7 @@ from app.features.notifications.ws.connection import (
 )
 from app.models.user import User
 from fastapi import WebSocket
+from fastapi.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 
@@ -49,21 +50,24 @@ class ConnectionManager:
                 await self.disconnect(user_id)
 
             connection = WebSocketConnection(websocket, user)
-
             connection.add_connected_handler(self._handle_client_connected)
             connection.add_disconnected_handler(self._handle_client_disconnected)
 
-            connected = await connection.connect()
+            connection.state = ConnectionState.CONNECTED
+            self.active_connections[user_id] = connection
 
-            if connected:
-                self.active_connections[user_id] = connection
-                logger.info(f"New connection established for user {user_id}")
-                return True
-
-            return False
+            logger.info(f"New connection established for user {user_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Failed to establish connection for user {user_id}: {str(e)}")
+            try:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1011)
+            except Exception:
+                pass
+            if user_id in self.active_connections:
+                self.active_connections.pop(user_id, None)
             return False
 
     async def disconnect(self, user_id: int) -> None:
@@ -111,10 +115,26 @@ class ConnectionManager:
             if user_id not in exclude:
                 await self.send_notification(user_id, message)
 
+    async def handle_message(self, user_id: int, message: str) -> None:
+        """Handle incoming messages from clients"""
+        if user_id not in self.active_connections:
+            logger.warning(f"No active connection for user {user_id}")
+            return
+
+        try:
+            connection = self.active_connections[user_id]
+            await connection.handle_message(message)
+        except Exception as e:
+            logger.error(f"Error handling message from user {user_id}: {str(e)}")
+            await self.handle_connection_error(user_id, e)
+
     async def handle_connection_error(self, user_id: int, error: Exception) -> None:
         """Handle connection errors"""
         logger.error(f"Connection error for user {user_id}: {str(error)}")
-        await self.disconnect(user_id)
+        if user_id in self.active_connections:
+            connection = self.active_connections[user_id]
+            if connection.state == ConnectionState.CONNECTED:
+                await self.disconnect(user_id)
 
     def get_connection_status(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get connection status for a user"""

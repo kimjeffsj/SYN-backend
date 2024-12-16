@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-from app.models.notification import Notification
+from app.models.notification import Notification, NotificationStatus
 from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
@@ -117,7 +117,7 @@ class NotificationService:
             .filter(
                 and_(
                     Notification.user_id == user_id,
-                    Notification.status == "pending",
+                    Notification.status == NotificationStatus.PENDING,
                     Notification.created_at >= cutoff_date,
                 )
             )

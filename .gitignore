@@ -13,6 +13,10 @@ __pycache__/
 *.swo
 .DS_Store
 
+celerybeat-schedule*
+
+scripts
+
 
 # Don't ignore migrations
 !migrations/

@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from app.models.user import User
 from fastapi import WebSocket
+from fastapi.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ class WebSocketConnection:
         self.last_pong = datetime.now()
         self.ping_interval = ping_interval
         self.ping_timeout = ping_timeout
+        self.max_reconnect_attempts = max_reconnect_attempts
+        self.reconnect_attempts = 0
         self.error: Optional[str] = None
         self.pending_notifications: List[Dict[str, Any]] = []
         self.connected_handlers: Set[Callable] = set()
@@ -42,7 +45,6 @@ class WebSocketConnection:
     async def connect(self) -> bool:
         """Establish WebSocket connection"""
         try:
-            await self.websocket.accept()
             self.state = ConnectionState.CONNECTED
             self.reconnect_attempts = 0
             logger.info(f"WebSocket connected for user {self.user.id}")
@@ -62,12 +64,10 @@ class WebSocketConnection:
     async def disconnect(self, code: int = 1000) -> None:
         """Close WebSocket connection"""
         try:
+            self.state = ConnectionState.DISCONNECTING
+            if self.websocket.client_state == WebSocketState.CONNECTED:
+                await self.websocket.close()
             self.state = ConnectionState.DISCONNECTED
-            await self.websocket.close()
-
-            for handler in self.disconnected_handlers:
-                await handler(self.user.id)
-
         except Exception as e:
             logger.error(f"Error closing WebSocket: {str(e)}")
         finally:

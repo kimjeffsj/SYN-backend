@@ -41,7 +41,7 @@ async def handle_schedule_update_notification(event: Event, db: Session) -> None
 
             notification = Notification(**notification_data)
             db.add(notification)
-            await db.flush()
+            db.flush()
 
         # Send real-time notification
         sent = await notification_manager.send_notification(
@@ -52,7 +52,7 @@ async def handle_schedule_update_notification(event: Event, db: Session) -> None
             notification.status = "sent"
             notification.sent_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        db.commit()
 
     except Exception as e:
         db.rollback()
@@ -98,7 +98,7 @@ async def handle_trade_response_notification(event: Event, db: Session) -> None:
         async with db.begin():
             notification = Notification(**notification_data)
             db.add(notification)
-            await db.flush()
+            db.flush()
 
             sent = await notification_manager.send_notification(
                 trade_request.author_id, notification.to_dict()
@@ -108,7 +108,7 @@ async def handle_trade_response_notification(event: Event, db: Session) -> None:
                 notification.status = "sent"
                 notification.sent_at = datetime.now(timezone.utc)
 
-        await db.commit()
+        db.commit()
 
     except Exception as e:
         db.rollback()
@@ -164,7 +164,7 @@ async def handle_new_announcement_notification(event: Event, db: Session) -> Non
 
                 notification = Notification(**notification_data)
                 db.add(notification)
-                await db.flush()
+                db.flush()
 
                 # notification_manager가 None인지 체크
                 if notification_manager:
@@ -185,11 +185,12 @@ async def handle_new_announcement_notification(event: Event, db: Session) -> Non
                 )
                 continue
 
-        await db.commit()
+        db.commit()
 
     except Exception as e:
-        await db.rollback()
         logger.error(f"Error in handle_new_announcement_notification: {str(e)}")
+        if not isinstance(db.rollback, type(None)):
+            await db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process announcement notification: {str(e)}",

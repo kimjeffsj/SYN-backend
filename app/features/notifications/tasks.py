@@ -9,15 +9,15 @@ from .ws_manager import notification_manager
 
 
 @celery_app.task
-async def send_notification(user_id: int, notification_data: Dict[str, Any]):
+def send_notification(user_id: int, notification_data: Dict[str, Any]):
     """Send notifications"""
     try:
-        async with SessionLocal() as db:
-            notification = await NotificationService.create_notification(
+        with SessionLocal() as db:
+            notification = NotificationService.create_notification(
                 db, notification_data
             )
 
-            sent = await notification_manager.send_notification(
+            sent = notification_manager.send_notification(
                 user_id, notification.to_dict()
             )
 
@@ -32,7 +32,7 @@ async def send_notification(user_id: int, notification_data: Dict[str, Any]):
                 )
 
             db.add(notification)
-            await db.commit()
+            db.commit()
 
             return {"success": True, "notification_id": notification.id, "sent": sent}
 
@@ -41,16 +41,14 @@ async def send_notification(user_id: int, notification_data: Dict[str, Any]):
 
 
 @celery_app.task(name="notifications.retry_failed")
-async def retry_failed_notifications():
+def retry_failed_notifications():
     """Retry failed notifications task"""
     try:
-        async with SessionLocal() as db:
-            failed_notifications = await NotificationService.get_failed_notifications(
-                db
-            )
+        with SessionLocal() as db:
+            failed_notifications = NotificationService.get_failed_notifications(db)
 
             for notification in failed_notifications:
-                sent = await notification_manager.send_notification(
+                sent = notification_manager.send_notification(
                     notification.user_id, notification.to_dict()
                 )
 
@@ -68,7 +66,7 @@ async def retry_failed_notifications():
 
                 db.add(notification)
 
-            await db.commit()
+            db.commit()
             return {"success": True}
 
     except Exception as e:
