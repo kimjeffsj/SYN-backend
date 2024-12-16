@@ -103,41 +103,26 @@ class AnnouncementService:
         db: Session, announcement_data: AnnouncementCreate, created_by: int
     ):
         """Create a new announcement"""
-        print("announcement created")
-        announcement = Announcement(
-            **announcement_data.model_dump(), created_by=created_by
-        )
-        db.add(announcement)
-        db.commit()
-        db.refresh(announcement)
-
-        logger.info(f"Attempting to publish announcement event: {announcement.id}")
-        await event_bus.publish(
-            Event(
-                type=NotificationEventType.ANNOUNCEMENT_CREATED,
-                data={"announcement": announcement, "author": announcement.author},
-            )
-        )
-        logger.info(f"Successfully published announcement event: {announcement.id}")
-
         try:
+            announcement = Announcement(
+                **announcement_data.model_dump(), created_by=created_by
+            )
+            db.add(announcement)
+            db.commit()
             db.refresh(announcement)
-            return {
-                "id": announcement.id,
-                "title": announcement.title,
-                "content": announcement.content,
-                "priority": announcement.priority,
-                "created_by": announcement.created_by,
-                "author": {
-                    "id": announcement.author.id,
-                    "name": announcement.author.full_name,
-                    "position": announcement.author.position,
-                },
-                "read_count": 0,
-                "is_read": False,
-                "created_at": announcement.created_at,
-                "updated_at": announcement.updated_at,
-            }
+
+            logger.info(f"Attempting to publish announcement event: {announcement.id}")
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.ANNOUNCEMENT_CREATED,
+                    data={"announcement": announcement, "author": announcement.author},
+                )
+            )
+            logger.info(f"Successfully published announcement event: {announcement.id}")
+
+            return await AnnouncementService.format_announcement(
+                announcement, created_by
+            )
         except Exception as e:
             db.rollback()
             raise HTTPException(
@@ -166,7 +151,10 @@ class AnnouncementService:
         try:
             db.commit()
             db.refresh(announcement)
-            return announcement
+
+            return await AnnouncementService.format_announcement(
+                announcement, announcement.created_by
+            )
         except Exception as e:
             db.rollback()
             raise HTTPException(
