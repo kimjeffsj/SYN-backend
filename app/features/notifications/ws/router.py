@@ -6,6 +6,7 @@ from app.core.security import get_user_from_token
 from app.features.notifications.service import NotificationService
 from app.features.notifications.ws_manager import notification_manager
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,24 +18,24 @@ async def notification_websocket(
     user_id: int,
     token: str = Query(...),
 ):
-    db = get_db()
-
+    db_session = None
     try:
-        # Validate token and get user
-        db_session = next(db)
+        await websocket.accept()
+        db_session = next(get_db())
+        # get user from token
         user = await get_user_from_token(token, db_session)
 
         if not user or user.id != user_id:
             await websocket.close(code=4001)  # Unauthorized
             return
 
-        # Initialize connection and protocol
+        # Connect WebSocket
         connected = await notification_manager.connect(user, websocket)
         if not connected:
             return
 
         try:
-            # 미처리 알림 전송
+            # Send pending notifications
             pending_notifications = await NotificationService.get_pending_notifications(
                 db_session, user_id
             )
@@ -43,6 +44,7 @@ async def notification_websocket(
                     user_id, notification.to_dict()
                 )
 
+            # Handle incoming messages
             while True:
                 data = await websocket.receive_text()
                 await notification_manager.handle_message(user_id, data)
@@ -52,12 +54,12 @@ async def notification_websocket(
 
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {str(e)}")
-        if websocket.client_state.connected:
+        if websocket.client_state != WebSocketState.DISCONNECTED:
             await websocket.close(code=1011)
-
     finally:
         await notification_manager.disconnect(user_id)
-        db_session.close()
+        if db_session:
+            db_session.close()
 
 
 @router.get("/health")
