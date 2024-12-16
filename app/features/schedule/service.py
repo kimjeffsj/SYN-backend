@@ -1,13 +1,13 @@
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
 from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
-from app.models.schedule_enums import ScheduleStatus
+from app.models.schedule_enums import ScheduleStatus, ShiftType
 from fastapi import HTTPException, status
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 
@@ -244,6 +244,122 @@ class ScheduleService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             )
+
+    @staticmethod
+    async def get_schedule_overview(
+        db: Session, start_date: datetime, end_date: datetime, view_type: str = "week"
+    ) -> dict:
+        """Overview of schedules"""
+        base_query = db.query(Schedule).filter(
+            and_(
+                Schedule.start_time >= start_date,
+                Schedule.end_time <= end_date,
+                Schedule.status != ScheduleStatus.CANCELLED,
+            )
+        )
+
+        # Daily stats
+        daily_stats = {}
+        current_date = start_date
+        while current_date <= end_date:
+            next_date = current_date + timedelta(days=1)
+
+            # Get schedules for the day
+            day_schedules = base_query.filter(
+                and_(
+                    Schedule.start_time >= current_date,
+                    Schedule.end_time < next_date,
+                )
+            ).all()
+
+            daily_stats[current_date.strftime("%Y-%m-%d")] = {
+                "total_count": len(day_schedules),
+                "shift_counts": {
+                    "morning": sum(
+                        1 for s in day_schedules if s.shift_type == ShiftType.MORNING
+                    ),
+                    "afternoon": sum(
+                        1 for s in day_schedules if s.shift_type == ShiftType.AFTERNOON
+                    ),
+                    "evening": sum(
+                        1 for s in day_schedules if s.shift_type == ShiftType.EVENING
+                    ),
+                    "full_day": sum(
+                        1 for s in day_schedules if s.shift_type == ShiftType.FULL_DAY
+                    ),
+                },
+                "status_counts": {
+                    "confirmed": sum(
+                        1 for s in day_schedules if s.status == ScheduleStatus.CONFIRMED
+                    ),
+                    "pending": sum(
+                        1 for s in day_schedules if s.status == ScheduleStatus.PENDING
+                    ),
+                },
+                "schedules": [
+                    {
+                        "id": schedule.id,
+                        "user_id": schedule.user_id,
+                        "user": {
+                            "id": schedule.user.id,
+                            "name": schedule.user.full_name,
+                            "position": schedule.user.position,
+                        },
+                        "shift_type": schedule.shift_type.value,
+                        "start_time": schedule.start_time.strftime("%H:%M"),
+                        "end_time": schedule.end_time.strftime("%H:%M"),
+                        "status": schedule.status.value,
+                    }
+                    for schedule in day_schedules
+                ],
+            }
+
+            current_date = next_date
+
+        return {
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
+            "view_type": view_type,
+            "daily_stats": daily_stats,
+        }
+
+    @staticmethod
+    async def get_daily_schedule_detail(
+        db: Session,
+        target_date: datetime,
+    ) -> List[Dict]:
+        """Get daily schedule detail"""
+
+        schedules = (
+            db.query(Schedule)
+            .filter(
+                and_(
+                    func.date(Schedule.start_time) == target_date.date(),
+                    Schedule.status != ScheduleStatus.CANCELLED,
+                )
+            )
+            .order_by(Schedule.start_time)
+            .all()
+        )
+
+        return [
+            {
+                "id": schedule.id,
+                "user": {
+                    "id": schedule.user.id,
+                    "name": schedule.user.full_name,
+                    "position": schedule.user.position,
+                },
+                "shift_type": schedule.shift_type.value,
+                "time": {
+                    "start": schedule.start_time.strftime("%H:%M"),
+                    "end": schedule.end_time.strftime("%H:%M"),
+                },
+                "status": schedule.status.value,
+                "description": schedule.description,
+            }
+            for schedule in schedules
+        ]
 
     @staticmethod
     def _check_schedule_conflict(
