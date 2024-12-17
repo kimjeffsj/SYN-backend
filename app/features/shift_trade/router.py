@@ -34,7 +34,7 @@ async def get_trade_requests(
     return await ShiftTradeService.get_trade_requests(db, skip, limit, status, type)
 
 
-@router.get("/{trade_id}/responses", response_model=schemas.ShiftTradeResponseDetail)
+@router.post("/{trade_id}/responses", response_model=schemas.ShiftTradeResponseDetail)
 async def respond_to_trade(
     trade_id: int,
     response_data: schemas.ShiftTradeResponseCreate,
@@ -42,6 +42,8 @@ async def respond_to_trade(
     current_user: User = Depends(get_current_user),
 ):
     """Respond to shift trade"""
+    print(f"Received trade response request: {trade_id}")  # 디버깅 로그 추가
+    print(f"Response data: {response_data}")
     return await ShiftTradeService.response_to_trade(
         db, trade_id, response_data, current_user.id
     )

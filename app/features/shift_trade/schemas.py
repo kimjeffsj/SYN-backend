@@ -35,15 +35,17 @@ class ShiftTradeResponseBase(BaseModel):
     offered_shift_id: int
 
 
-class ShiftTradeResponseCreate(ShiftTradeResponseBase):
-    pass
+class ShiftTradeResponseCreate(BaseModel):
+    offered_shift_id: int
+    content: Optional[str] = None
 
 
-class ShiftTradeResponseDetail(ShiftTradeResponseBase):
+class ShiftTradeResponseDetail(BaseModel):
     id: int
     trade_request_id: int
     respondent: dict
     offered_shift: dict
+    content: Optional[str]
     status: str
     created_at: datetime
 

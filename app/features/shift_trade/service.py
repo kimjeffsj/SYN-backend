@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from app.features.shift_trade import schemas
+from app.models.notification import Notification, NotificationType
 from app.models.shift_trade import ShiftTrade, ShiftTradeResponse, TradeStatus
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -210,17 +211,55 @@ class ShiftTradeService:
                 detail="Already responded to this trade request",
             )
 
-        response = ShiftTradeResponse(
-            trade_request_id=trade_id,
-            respondent_id=respondent_id,
-            **response_data.model_dump(),
-        )
-
         try:
+            response = ShiftTradeResponse(
+                trade_request_id=trade_id,
+                respondent_id=respondent_id,
+                offered_shift_id=response_data.offered_shift_id,
+                content=response_data.content,
+                status="PENDING",
+            )
+
             db.add(response)
             db.commit()
             db.refresh(response)
-            return response
+
+            # Get the trade request
+            trade = db.query(ShiftTrade).get(trade_id)
+            # Create a notification for the author
+            notification = Notification(
+                user_id=trade.author_id,
+                type=NotificationType.SHIFT_TRADE,
+                title="Shift Trade Response",
+                message=f"{response.respondent.full_name} has responded to your trade request",
+                priority="HIGH",
+                data={
+                    "trade_id": trade_id,
+                    "response_id": response.id,
+                },
+            )
+            db.add(notification)
+            db.commit()
+
+            return {
+                "id": response.id,
+                "trade_request_id": response.trade_request_id,
+                "respondent": {
+                    "id": response.respondent.id,
+                    "name": response.respondent.full_name,
+                    "position": response.respondent.position,
+                },
+                "offered_shift": {
+                    "id": response.offered_shift.id,
+                    "start_time": response.offered_shift.start_time,
+                    "end_time": response.offered_shift.end_time,
+                    "shift_type": response.offered_shift.shift_type,
+                    "status": response.offered_shift.status,
+                },
+                "content": response.content,
+                "status": response.status,
+                "created_at": response.created_at,
+            }
         except Exception as e:
             db.rollback()
             raise HTTPException(
