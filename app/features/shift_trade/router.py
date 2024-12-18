@@ -25,9 +25,7 @@ async def get_trade_requests(
     current_user: User = Depends(get_current_user),
 ):
     """Get all trade requests with optional filtering"""
-    service = ShiftTradeService(db)
-    params = {"status": status, "type": type} if status or type else None
-    return await service.get_trade_requests(params)
+    return ShiftTradeService.get_trade_requests(db, status, type, search)
 
 
 @router.get("/{trade_id}", response_model=ShiftTradeResponse)
@@ -37,8 +35,7 @@ async def get_trade_request(
     current_user: User = Depends(get_current_user),
 ):
     """Get specific trade request details"""
-    service = ShiftTradeService(db)
-    return await service.get_trade_request(trade_id)
+    return ShiftTradeService.get_trade_request(db, trade_id)
 
 
 @router.post("/", response_model=ShiftTradeResponse)
@@ -48,8 +45,9 @@ async def create_trade_request(
     current_user: User = Depends(get_current_user),
 ):
     """Create new trade request"""
-    service = ShiftTradeService(db)
-    return await service.create_trade_request(request.model_dump(), current_user.id)
+    return await ShiftTradeService.create_trade_request(
+        db, request.model_dump(), current_user.id
+    )
 
 
 @router.post("/{trade_id}/responses", response_model=ShiftTradeResponse)
@@ -60,9 +58,8 @@ async def create_trade_response(
     current_user: User = Depends(get_current_user),
 ):
     """Respond to a trade request"""
-    service = ShiftTradeService(db)
-    return await service.create_trade_response(
-        trade_id, response.model_dump(), current_user.id
+    return await ShiftTradeService.create_trade_response(
+        db, trade_id, response.model_dump(), current_user.id
     )
 
 
@@ -75,12 +72,8 @@ async def update_response_status(
     current_user: User = Depends(get_current_user),
 ):
     """Update trade response status (accept/reject)"""
-    service = ShiftTradeService(db)
-    return await service.update_response_status(
-        trade_id,
-        response_id,
-        update.status,
-        current_user.id,
+    return await ShiftTradeService.update_response_status(
+        db, trade_id, response_id, update.status, current_user.id
     )
 
 
@@ -91,6 +84,4 @@ async def cancel_trade_request(
     current_user: User = Depends(get_current_user),
 ):
     """Cancel a trade request"""
-    service = ShiftTradeService(db)
-    await service.cancel_trade_request(trade_id, current_user.id)
-    return {"message": "Trade request cancelled successfully"}
+    return await ShiftTradeService.cancel_trade_request(db, trade_id, current_user.id)
