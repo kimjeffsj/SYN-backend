@@ -4,10 +4,9 @@ from enum import Enum
 class ShiftType(str, Enum):
     """Types of work shifts"""
 
-    MORNING = "morning"  # 0800-1600
-    AFTERNOON = "afternoon"  # 1200-2000
-    EVENING = "evening"  # 1700-2200
-    FULL_DAY = "full_day"  # 0800-1800
+    MORNING = "morning"  # 0700-1500
+    AFTERNOON = "afternoon"  # 1100-1900
+    EVENING = "evening"  # 1700-2300
 
 
 class ScheduleStatus(str, Enum):

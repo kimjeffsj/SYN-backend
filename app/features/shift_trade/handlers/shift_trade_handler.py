@@ -16,11 +16,13 @@ class ShiftTradeHandler(BaseTradeHandler):
         super().__init__(db)
 
     async def validate(self, trade_request: ShiftTrade) -> bool:
-        """
-        Validate trade request
-        - Check if original schedule belongs to user
-        - Check if schedule is available for trade
-        """
+        """Validate trade request"""
+        if not trade_request.original_shift:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Original shift not found",
+            )
+
         if not await self.check_schedule_availability(
             trade_request.original_shift, trade_request.author_id
         ):
@@ -32,7 +34,7 @@ class ShiftTradeHandler(BaseTradeHandler):
         return True
 
     async def process(self, trade_request: ShiftTrade) -> ShiftTrade:
-        """process trade request"""
+        """Process trade request"""
         try:
             trade_request.status = TradeStatus.OPEN
             trade_request.type = TradeType.TRADE
@@ -42,7 +44,6 @@ class ShiftTradeHandler(BaseTradeHandler):
             await self.db.commit()
 
             return trade_request
-
         except Exception as e:
             await self.db.rollback()
             raise HTTPException(

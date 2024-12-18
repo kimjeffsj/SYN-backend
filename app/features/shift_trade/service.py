@@ -1,10 +1,7 @@
 from typing import List, Optional
 
-from app.core.events import Event, event_bus
-from app.features.notifications.events.types import NotificationEventType
 from app.features.shift_trade.handlers.giveaway_handler import GiveawayHandler
 from app.features.shift_trade.handlers.shift_trade_handler import ShiftTradeHandler
-from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
 from app.models.shift_trade import (
     ShiftTrade,
@@ -12,7 +9,6 @@ from app.models.shift_trade import (
     TradeStatus,
     TradeType,
 )
-from app.models.user import User
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -28,13 +24,33 @@ class ShiftTradeService:
     async def create_trade_request(self, trade_data: dict, user_id: int) -> ShiftTrade:
         """Create new trade request"""
         try:
-            trade_request = ShiftTrade(author_id=user_id, **trade_data)
+            print(f"creating trade request: {trade_data}")
+
+            schedule = (
+                self.db.query(Schedule)
+                .filter(Schedule.id == trade_data["original_shift_id"])
+                .first()
+            )
+            if not schedule:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found"
+                )
+
+            trade_request = ShiftTrade(
+                author_id=user_id, original_shift=schedule, **trade_data
+            )
+
+            print(f"Created trade request object: {trade_request}")
+            print(f"Trade request original : {trade_request.original_shift}")
 
             handler = self.handlers[trade_data["type"]]
+            print(f"Handler: {handler}")
             await handler.validate(trade_request)
             return await handler.process(trade_request)
 
         except Exception as e:
+            print(f"Failed to create trade request: {str(e)}")
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to create trade request: {str(e)}",
@@ -45,9 +61,10 @@ class ShiftTradeService:
         trade_id: int,
         response_data: dict,
         respondent_id: int,
-    ) -> ShiftTradeResponse:
+    ) -> ShiftTrade:
         """Create response to trade request"""
         try:
+
             trade_request = await self.get_trade_request(trade_id)
 
             if trade_request.status != TradeStatus.OPEN:

@@ -284,9 +284,6 @@ class ScheduleService:
                     "evening": sum(
                         1 for s in day_schedules if s.shift_type == ShiftType.EVENING
                     ),
-                    "full_day": sum(
-                        1 for s in day_schedules if s.shift_type == ShiftType.FULL_DAY
-                    ),
                 },
                 "status_counts": {
                     "confirmed": sum(
