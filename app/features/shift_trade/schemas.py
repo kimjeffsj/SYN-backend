@@ -23,11 +23,17 @@ class ScheduleInfo(BaseModel):
     end_time: str
     type: str
 
+    class Config:
+        from_attributes = True
+
 
 class UserInfo(BaseModel):
     id: int
     name: str
     position: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 class TradeResponseInfo(BaseModel):

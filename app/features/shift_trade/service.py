@@ -132,13 +132,52 @@ class ShiftTradeService:
                 detail="Original shift not found or doesn't belong to user",
             )
 
+        # Check for existing active trade request
+        existing_trade = (
+            db.query(ShiftTrade)
+            .filter(
+                ShiftTrade.original_shift_id == request_data["original_shift_id"],
+            )
+            .first()
+        )
+
+        if existing_trade:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An active trade request already exists for this shift",
+            )
+
         trade_request = ShiftTrade(author_id=user_id, **request_data)
 
         try:
             db.add(trade_request)
             db.commit()
             db.refresh(trade_request)
-            return trade_request
+
+            return {
+                "id": trade_request.id,
+                "type": trade_request.type,
+                "author_id": trade_request.author_id,  # 추가
+                "original_shift_id": trade_request.original_shift_id,
+                "author": {
+                    "id": trade_request.author.id,
+                    "name": trade_request.author.full_name,  # User 모델의 full_name 사용
+                    "position": trade_request.author.position,
+                },
+                "original_shift": {
+                    "id": trade_request.original_shift.id,
+                    "start_time": trade_request.original_shift.start_time.strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                    "end_time": trade_request.original_shift.end_time.strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                    "type": trade_request.original_shift.shift_type.value,  # enum 값을 문자열로
+                },
+                "status": trade_request.status.value,
+                "created_at": trade_request.created_at.isoformat(),
+                "responses": [],
+            }
 
         except Exception as e:
             db.rollback()
