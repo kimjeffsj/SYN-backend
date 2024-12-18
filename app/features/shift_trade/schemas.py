@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from app.models.shift_trade import TradeStatus, TradeType, UrgencyLevel
 from pydantic import BaseModel
@@ -7,45 +7,64 @@ from pydantic import BaseModel
 
 class ShiftTradeBase(BaseModel):
     type: TradeType
+    original_shift_id: int
+    preferred_shift_id: Optional[int] = None
     reason: Optional[str] = None
-    urgency: UrgencyLevel = UrgencyLevel.MEDIUM
+    urgency: UrgencyLevel = UrgencyLevel.NORMAL
 
 
 class ShiftTradeCreate(ShiftTradeBase):
-    original_shift_id: int
-    preferred_shift_id: Optional[int] = None
+    pass
+
+
+class ScheduleInfo(BaseModel):
+    id: int
+    start_time: str
+    end_time: str
+    type: str
+
+    class Config:
+        from_attributes = True
+
+
+class UserInfo(BaseModel):
+    id: int
+    name: str
+    position: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TradeResponseInfo(BaseModel):
+    id: int
+    respondent: UserInfo
+    offered_shift: ScheduleInfo
+    content: Optional[str]
+    status: str
+    created_at: datetime
 
 
 class ShiftTradeResponse(ShiftTradeBase):
     id: int
-    author: dict  # User info
-    original_shift: dict  # Schedule info
-    preferred_shift: Optional[dict] = None
+    author_id: int
     status: TradeStatus
-    responses: int
     created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    author: UserInfo
+    original_shift: ScheduleInfo
+    preferred_shift: Optional[ScheduleInfo] = None
+    responses: List[TradeResponseInfo] = []
 
     class Config:
         from_attributes = True
-        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
-class ShiftTradeResponseBase(BaseModel):
-    content: Optional[str] = None
+class TradeResponseCreate(BaseModel):
     offered_shift_id: int
+    content: Optional[str] = None
 
 
-class ShiftTradeResponseCreate(ShiftTradeResponseBase):
-    pass
-
-
-class ShiftTradeResponseDetail(ShiftTradeResponseBase):
-    id: int
-    trade_request_id: int
-    respondent: dict
-    offered_shift: dict
-    status: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
+class TradeResponseUpdate(BaseModel):
+    status: str  # ACCEPTED or REJECTED
