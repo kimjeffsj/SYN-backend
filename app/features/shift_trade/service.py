@@ -1,57 +1,144 @@
+from datetime import datetime
 from typing import List, Optional
 
-from app.features.shift_trade import schemas
-from app.models.notification import Notification, NotificationType
+from app.core.events import Event, event_bus
+from app.features.notifications.events.types import NotificationEventType
+from app.models.notification import Notification, NotificationPriority, NotificationType
+from app.models.schedule import Schedule
 from app.models.shift_trade import ShiftTrade, ShiftTradeResponse, TradeStatus
+from app.models.user import User
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 
 class ShiftTradeService:
     @staticmethod
+    def get_trade_requests(
+        db: Session,
+        status: Optional[str] = None,
+        type: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> List[ShiftTrade]:
+        query = db.query(ShiftTrade)
+
+        if status:
+            query = query.filter(ShiftTrade.status == status)
+        if type:
+            query = query.filter(ShiftTrade.type == type)
+        if search:
+            # Search in user names or schedule details
+            query = query.join(ShiftTrade.author).filter(
+                User.full_name.ilike(f"%{search}%")
+            )
+
+        trades = query.order_by(ShiftTrade.created_at.desc()).all()
+
+        # Convert to response format
+        return [
+            {
+                "id": trade.id,
+                "type": trade.type,
+                "author_id": trade.author_id,
+                "original_shift_id": trade.original_shift_id,
+                "preferred_shift_id": trade.preferred_shift_id,
+                "reason": trade.reason,
+                "status": trade.status,
+                "urgency": trade.urgency,
+                "created_at": trade.created_at,
+                "updated_at": trade.updated_at,
+                "author": {
+                    "id": trade.author.id,
+                    "name": trade.author.full_name,
+                    "position": trade.author.position,
+                },
+                "original_shift": {
+                    "id": trade.original_shift.id,
+                    "start_time": trade.original_shift.start_time.strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                    "end_time": trade.original_shift.end_time.strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                    "type": trade.original_shift.shift_type,
+                },
+                "preferred_shift": (
+                    {
+                        "id": trade.preferred_shift.id,
+                        "start_time": trade.preferred_shift.start_time.strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "end_time": trade.preferred_shift.end_time.strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "type": trade.preferred_shift.shift_type,
+                    }
+                    if trade.preferred_shift
+                    else None
+                ),
+                "responses": [
+                    {
+                        "id": response.id,
+                        "respondent": {
+                            "id": response.respondent.id,
+                            "name": response.respondent.full_name,
+                            "position": response.respondent.position,
+                        },
+                        "offered_shift": {
+                            "id": response.offered_shift.id,
+                            "start_time": response.offered_shift.start_time.strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            "end_time": response.offered_shift.end_time.strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            "type": response.offered_shift.shift_type,
+                        },
+                        "content": response.content,
+                        "status": response.status,
+                        "created_at": response.created_at,
+                    }
+                    for response in trade.responses
+                ],
+            }
+            for trade in trades
+        ]
+
+    @staticmethod
+    def get_trade_request(db: Session, trade_id: int) -> ShiftTrade:
+        trade = db.query(ShiftTrade).filter(ShiftTrade.id == trade_id).first()
+        if not trade:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Trade request not found"
+            )
+        return trade
+
+    @staticmethod
     async def create_trade_request(
-        db: Session, trade_data: schemas.ShiftTradeCreate, author_id: int
+        db: Session, request_data: dict, user_id: int
     ) -> ShiftTrade:
-        """Create New Shift Trade request"""
-        trade_request = ShiftTrade(
-            **trade_data.model_dump(), author_id=author_id, status=TradeStatus.OPEN
+        # Validate original shift belongs to user
+        original_shift = (
+            db.query(Schedule)
+            .filter(
+                Schedule.id == request_data["original_shift_id"],
+                Schedule.user_id == user_id,
+            )
+            .first()
         )
+
+        if not original_shift:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Original shift not found or doesn't belong to user",
+            )
+
+        trade_request = ShiftTrade(author_id=user_id, **request_data)
 
         try:
             db.add(trade_request)
             db.commit()
             db.refresh(trade_request)
-
-            return {
-                "id": trade_request.id,
-                "type": trade_request.type,
-                "author": {
-                    "id": trade_request.author.id,
-                    "name": trade_request.author.full_name,
-                    "position": trade_request.author.position,
-                },
-                "original_shift": {
-                    "date": trade_request.original_shift.start_time.strftime(
-                        "%Y-%m-%d"
-                    ),
-                    "start_time": trade_request.original_shift.start_time.isoformat(),
-                    "end_time": trade_request.original_shift.end_time.isoformat(),
-                    "shift_type": trade_request.original_shift.shift_type,
-                },
-                "preferred_shift": trade_request.preferred_shift_id
-                and {
-                    "date": trade_request.preferred_shift.start_time.strftime(
-                        "%Y-%m-%d"
-                    ),
-                    "time": f"{trade_request.preferred_shift.start_time.strftime('%H:%M')}-{trade_request.preferred_shift.end_time.strftime('%H:%M')}",
-                    "shift_type": trade_request.preferred_shift.shift_type,
-                },
-                "status": trade_request.status,
-                "responses": len(trade_request.responses),
-                "created_at": trade_request.created_at.isoformat(),
-                "reason": trade_request.reason,
-                "urgency": trade_request.urgency,
-            }
+            return trade_request
 
         except Exception as e:
             db.rollback()
@@ -60,206 +147,62 @@ class ShiftTradeService:
             )
 
     @staticmethod
-    async def get_trade_requests(db: Session, skip: int = 0, limit: int = 100):
-        try:
-            query = db.query(ShiftTrade)
-            trades = query.offset(skip).limit(limit).all()
-
-            formatted_trades = []
-            for trade in trades:
-                if not trade or not trade.original_shift or not trade.author:
-                    continue
-
-                try:
-                    formatted_trade = {
-                        "id": trade.id,
-                        "type": trade.type,
-                        "author": {
-                            "id": trade.author.id,
-                            "name": trade.author.full_name,
-                            "position": trade.author.position,
-                        },
-                        "original_shift": {
-                            "start_time": trade.original_shift.start_time.isoformat(),
-                            "end_time": trade.original_shift.end_time.isoformat(),
-                            "shift_type": trade.original_shift.shift_type.value,
-                        },
-                        "status": trade.status.value,
-                        "responses": len(trade.responses) if trade.responses else 0,
-                        "created_at": (
-                            trade.created_at.isoformat() if trade.created_at else None
-                        ),
-                        "reason": trade.reason,
-                        "urgency": trade.urgency.value,
-                    }
-
-                    if trade.preferred_shift_id and trade.preferred_shift:
-                        formatted_trade["preferred_shift"] = {
-                            "start_time": trade.preferred_shift.start_time.isoformat(),
-                            "end_time": trade.preferred_shift.end_time.isoformat(),
-                            "shift_type": trade.preferred_shift.shift_type.value,
-                        }
-
-                    formatted_trades.append(formatted_trade)
-                except Exception as e:
-                    print(f"Error formatting trade {trade.id}: {str(e)}")
-                    continue
-
-            return formatted_trades
-        except Exception as e:
-            print(f"Error in get_trade_requests: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-            )
-
-    @staticmethod
-    async def get_trade_requests(
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        status: Optional[str] = None,
-        type: Optional[str] = None,
-    ) -> List[dict]:
-        """Get Shift Trade request list"""
-        try:
-            query = db.query(ShiftTrade)
-
-            if status:
-                query = query.filter(ShiftTrade.status == status.upper())
-            if type:
-                query = query.filter(ShiftTrade.type == type.upper())
-
-            trades = query.offset(skip).limit(limit).all()
-
-            formatted_trades = []
-
-            for trade in trades:
-                if not trade or not trade.original_shift or not trade.author:
-                    continue
-
-                try:
-                    formatted_trade = {
-                        "id": trade.id,
-                        "type": trade.type,
-                        "author": {
-                            "id": trade.author.id,
-                            "name": trade.author.full_name,
-                            "position": trade.author.position,
-                        },
-                        "original_shift": {
-                            "date": trade.original_shift.start_time.strftime(
-                                "%Y-%m-%d"
-                            ),
-                            "start_time": trade.original_shift.start_time.isoformat(),
-                            "end_time": trade.original_shift.end_time.isoformat(),
-                            "shift_type": trade.original_shift.shift_type,
-                        },
-                        "status": trade.status,
-                        "responses": len(trade.responses) if trade.responses else 0,
-                        "created_at": (
-                            trade.created_at.isoformat() if trade.created_at else None
-                        ),
-                        "reason": trade.reason,
-                        "urgency": trade.urgency,
-                    }
-
-                    # only if it has preferred_shift
-                    if trade.preferred_shift_id and trade.preferred_shift:
-                        formatted_trade["preferred_shift"] = {
-                            "date": trade.preferred_shift.start_time.strftime(
-                                "%Y-%m-%d"
-                            ),
-                            "time": f"{trade.preferred_shift.start_time.strftime('%H:%M')}-{trade.preferred_shift.end_time.strftime('%H:%M')}",
-                            "shift_type": trade.preferred_shift.shift_type,
-                        }
-                    else:
-                        formatted_trade["preferred_shift"] = None
-
-                    formatted_trades.append(formatted_trade)
-                except Exception as e:
-                    print(f"Error formatting trade {trade.id}: {str(e)}")
-                    continue
-
-            return formatted_trades
-        except Exception as e:
-            print(f"Error in get_trade_requests: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-            )
-
-    @staticmethod
-    async def response_to_trade(
-        db: Session,
-        trade_id: int,
-        response_data: schemas.ShiftTradeResponseCreate,
-        respondent_id: int,
+    async def create_trade_response(
+        db: Session, trade_id: int, response_data: dict, user_id: int
     ) -> ShiftTradeResponse:
-        """Response to a shift trade request"""
-        # Check if already responded
-        existing_response = (
-            db.query(ShiftTradeResponse)
+        trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+
+        # Validate offered shift belongs to responding user
+        offered_shift = (
+            db.query(Schedule)
             .filter(
-                ShiftTradeResponse.trade_request_id == trade_id,
-                ShiftTradeResponse.respondent_id == respondent_id,
+                Schedule.id == response_data["offered_shift_id"],
+                Schedule.user_id == user_id,
             )
             .first()
         )
 
-        if existing_response:
+        if not offered_shift:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Already responded to this trade request",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Offered shift not found or doesn't belong to user",
             )
+
+        # Create response
+        response = ShiftTradeResponse(
+            trade_request_id=trade_id, respondent_id=user_id, **response_data
+        )
 
         try:
-            response = ShiftTradeResponse(
-                trade_request_id=trade_id,
-                respondent_id=respondent_id,
-                offered_shift_id=response_data.offered_shift_id,
-                content=response_data.content,
-                status="PENDING",
-            )
-
             db.add(response)
             db.commit()
             db.refresh(response)
 
-            # Get the trade request
-            trade = db.query(ShiftTrade).get(trade_id)
-            # Create a notification for the author
+            # Send notification to trade request author
             notification = Notification(
-                user_id=trade.author_id,
+                user_id=trade_request.author_id,
                 type=NotificationType.SHIFT_TRADE,
-                title="Shift Trade Response",
-                message=f"{response.respondent.full_name} has responded to your trade request",
-                priority="HIGH",
+                title="New Response to Your Trade Request",
+                message=f"New response received for your trade request",
+                priority=NotificationPriority.HIGH,
                 data={
                     "trade_id": trade_id,
                     "response_id": response.id,
+                    "type": "response_received",
                 },
             )
             db.add(notification)
             db.commit()
 
-            return {
-                "id": response.id,
-                "trade_request_id": response.trade_request_id,
-                "respondent": {
-                    "id": response.respondent.id,
-                    "name": response.respondent.full_name,
-                    "position": response.respondent.position,
-                },
-                "offered_shift": {
-                    "id": response.offered_shift.id,
-                    "start_time": response.offered_shift.start_time,
-                    "end_time": response.offered_shift.end_time,
-                    "shift_type": response.offered_shift.shift_type,
-                    "status": response.offered_shift.status,
-                },
-                "content": response.content,
-                "status": response.status,
-                "created_at": response.created_at,
-            }
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.TRADE_RESPONDED,
+                    data={"trade_request": trade_request, "response": response},
+                )
+            )
+
+            return response
+
         except Exception as e:
             db.rollback()
             raise HTTPException(
@@ -267,32 +210,139 @@ class ShiftTradeService:
             )
 
     @staticmethod
-    async def approve_trade_response(
-        db: Session, trade_id, int, response_id: int, user_id: int
-    ) -> ShiftTrade:
-        """Accept Shift Trade"""
-        trade = db.query(ShiftTrade).filter(ShiftTrade.id == trade_id).first()
-        if not trade:
-            raise HTTPException(status_code=404, detail="Trade request not found")
+    async def update_response_status(
+        db: Session, trade_id: int, response_id: int, status: str, user_id: int
+    ) -> ShiftTradeResponse:
+        trade_request = ShiftTradeService.get_trade_request(db, trade_id)
 
-        if trade.author_id != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+        if trade_request.author_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the trade request author can update response status",
+            )
 
-        response = db.query(ShiftTradeResponse).get(response_id)
+        response = (
+            db.query(ShiftTradeResponse)
+            .filter(
+                ShiftTradeResponse.id == response_id,
+                ShiftTradeResponse.trade_request_id == trade_id,
+            )
+            .first()
+        )
+
         if not response:
-            raise HTTPException(status_code=404, detail="Trade response not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Trade response not found"
+            )
 
         try:
-            # Update response status
-            response.status = "ACCEPTED"
+            response.status = status
 
-            # Update trade request status
-            trade.status = TradeStatus.COMPLETED
+            if status == "ACCEPTED":
+                # Handle shift exchange
+                original_shift = trade_request.original_shift
+                offered_shift = response.offered_shift
 
-            # TODO: Implement actual schedule swapping logic
+                # Swap user_ids
+                original_shift.user_id, offered_shift.user_id = (
+                    offered_shift.user_id,
+                    original_shift.user_id,
+                )
+
+                # Update trade request status
+                trade_request.status = TradeStatus.COMPLETED
+
+                # Create notifications for both users
+                notifications = [
+                    Notification(
+                        user_id=trade_request.author_id,
+                        type=NotificationType.SHIFT_TRADE,
+                        title="Trade Request Completed",
+                        message="Your shift trade has been completed successfully",
+                        priority=NotificationPriority.HIGH,
+                        data={
+                            "trade_id": trade_id,
+                            "type": "trade_completed",
+                            "new_schedule_id": offered_shift.id,
+                        },
+                    ),
+                    Notification(
+                        user_id=response.respondent_id,
+                        type=NotificationType.SHIFT_TRADE,
+                        title="Trade Request Completed",
+                        message="Your shift trade response has been accepted",
+                        priority=NotificationPriority.HIGH,
+                        data={
+                            "trade_id": trade_id,
+                            "type": "trade_completed",
+                            "new_schedule_id": original_shift.id,
+                        },
+                    ),
+                ]
+
+                for notification in notifications:
+                    db.add(notification)
+
+            elif status == "REJECTED":
+                # Create rejection notification
+                notification = Notification(
+                    user_id=response.respondent_id,
+                    type=NotificationType.SHIFT_TRADE,
+                    title="Trade Response Rejected",
+                    message="Your shift trade response has been rejected",
+                    priority=NotificationPriority.NORMAL,
+                    data={"trade_id": trade_id, "type": "response_rejected"},
+                )
+                db.add(notification)
 
             db.commit()
-            return trade
+            db.refresh(response)
+
+            return response
+
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            )
+
+    @staticmethod
+    async def cancel_trade_request(db: Session, trade_id: int, user_id: int):
+        trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+
+        if trade_request.author_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the trade request author can cancel it",
+            )
+
+        if trade_request.status == TradeStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot cancel completed trade request",
+            )
+
+        try:
+            # Notify all responders
+            notifications = [
+                Notification(
+                    user_id=response.respondent_id,
+                    type=NotificationType.SHIFT_TRADE,
+                    title="Trade Request Cancelled",
+                    message="A trade request you responded to has been cancelled",
+                    priority=NotificationPriority.NORMAL,
+                    data={"trade_id": trade_id, "type": "trade_cancelled"},
+                )
+                for response in trade_request.responses
+            ]
+
+            for notification in notifications:
+                db.add(notification)
+
+            db.delete(trade_request)
+            db.commit()
+
+            return {"message": "Trade request cancelled successfully"}
 
         except Exception as e:
             db.rollback()
