@@ -10,7 +10,7 @@ class ShiftTradeBase(BaseModel):
     original_shift_id: int
     preferred_shift_id: Optional[int] = None
     reason: Optional[str] = None
-    urgency: UrgencyLevel = UrgencyLevel.MEDIUM
+    urgency: UrgencyLevel = UrgencyLevel.NORMAL
 
 
 class ShiftTradeCreate(ShiftTradeBase):
