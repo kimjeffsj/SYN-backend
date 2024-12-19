@@ -1,4 +1,10 @@
+import logging
+from datetime import datetime, timezone
 from typing import List, Optional
+
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
@@ -262,10 +268,10 @@ class ShiftTradeService:
                 notification = Notification(
                     user_id=trade_request.author_id,
                     type=NotificationType.SHIFT_TRADE,
-                    title="New Response to Your Trade Request",  # title 필드 필요
+                    title="New Response to Your Trade Request",
                     message=f"{response.respondent.full_name} has responded to your shift trade request",  # message 필드 필요
                     priority=NotificationPriority.HIGH,
-                    data={  # content 대신 data 필드 사용
+                    data={
                         "trade_id": trade_id,
                         "response_id": response.id,
                         "type": "response_received",
@@ -312,59 +318,70 @@ class ShiftTradeService:
 
     @staticmethod
     async def update_response_status(
-        db: Session, trade_id: int, response_id: int, status: str, user_id: int
+        db: Session, trade_id: int, response_id: int, response_status: str, user_id: int
     ) -> ShiftTradeResponse:
-        trade_request = ShiftTradeService.get_trade_request(db, trade_id)
-        print(
-            f"Processing trade response - Trade ID: {trade_id}, Response ID: {response_id}, Status: {status}"
-        )
-
-        if trade_request.author_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the trade request author can update response status",
-            )
-
-        response = (
-            db.query(ShiftTradeResponse)
-            .filter(
-                ShiftTradeResponse.id == response_id,
-                ShiftTradeResponse.trade_request_id == trade_id,
-            )
-            .first()
-        )
-
-        if not response:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Trade response not found"
-            )
-
         try:
-            response.status = status
-            if status == ResponseStatus.ACCEPTED:
+            trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+
+            if trade_request.author_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only the trade request author can update response status",
+                )
+
+            response = (
+                db.query(ShiftTradeResponse)
+                .filter(
+                    ShiftTradeResponse.id == response_id,
+                    ShiftTradeResponse.trade_request_id == trade_id,
+                )
+                .first()
+            )
+
+            if not response:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Trade response not found",
+                )
+
+            response.status = response_status
+
+            logger.info(
+                f"Response status: {response_status}, type: {type(response_status)}"
+            )
+            logger.info(
+                f"Trade request type: {trade_request.type}, type: {type(trade_request.type)}"
+            )
+
+            if response_status == ResponseStatus.ACCEPTED.value:
                 if trade_request.type == TradeType.TRADE:
-                    print("Processing trade acceptance...")
                     await ShiftTradeService._process_trade_acceptance(
                         db, trade_request, response
                     )
                 else:
-                    print("Processing giveaway acceptance...")
                     await ShiftTradeService._process_giveaway_acceptance(
                         db, trade_request, response
                     )
 
-            await ShiftTradeService._send_response_notifications(
-                db, trade_request, response
-            )
-            db.commit()
-            print("Trade response processed successfully")
+            else:
+                # commit if it's rejected
+                try:
+                    db.commit()
+                except Exception as e:
+                    db.rollback()
+                    raise e
 
             return await ShiftTradeService._format_trade_response(response)
 
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception as e:
             db.rollback()
+            logger.error(f"Error updating response status: {str(e)}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update response status: {str(e)}",
             )
 
     @staticmethod
@@ -415,39 +432,223 @@ class ShiftTradeService:
     async def _process_trade_acceptance(
         db: Session, trade_request: ShiftTrade, response: ShiftTradeResponse
     ):
-        # Swap schedules between users
-        original_shift = trade_request.original_shift
-        offered_shift = response.offered_shift
 
-        # Store original user IDs before swap
-        original_user_id = original_shift.user_id
-        offered_user_id = offered_shift.user_id
+        logger.info(
+            f"Starting trade acceptance process for trade request {trade_request.id}"
+        )
 
         try:
+            original_shift = trade_request.original_shift
+            offered_shift = response.offered_shift
+
+            if not original_shift or not offered_shift:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="One or both shifts not found",
+                )
+
+            # User IDs before swap
+            original_user_id = original_shift.user_id
+            offered_user_id = offered_shift.user_id
+
+            logger.info(
+                f"Swapping users - Original: {original_user_id} -> {offered_user_id}"
+            )
+            logger.info(
+                f"Swapping users - Offered: {offered_user_id} -> {original_user_id}"
+            )
+
             # Perform the swap
             original_shift.user_id = offered_user_id
             offered_shift.user_id = original_user_id
 
             # Update trade request status
             trade_request.status = TradeStatus.COMPLETED
+            response.status = ResponseStatus.ACCEPTED
 
-            # Explicitly update both shifts
-            db.add(original_shift)
-            db.add(offered_shift)
+            # Create notifications
+            notifications = [
+                Notification(
+                    user_id=original_user_id,
+                    type=NotificationType.SHIFT_TRADE,
+                    title="Trade Completed",
+                    message=(
+                        f"Your shift on {original_shift.start_time.strftime('%Y-%m-%d')} "
+                        f"({original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}) "
+                        f"has been traded with {response.respondent.full_name}.\n"
+                        f"Now you have new schedule on {offered_shift.start_time.strftime('%Y-%m-%d')} "
+                        f"({offered_shift.start_time.strftime('%H:%M')}-{offered_shift.end_time.strftime('%H:%M')})"
+                    ),
+                    priority=NotificationPriority.HIGH,
+                ),
+                Notification(
+                    user_id=offered_user_id,
+                    type=NotificationType.SHIFT_TRADE,
+                    title="Trade Completed",
+                    message=(
+                        f"Your shift on {offered_shift.start_time.strftime('%Y-%m-%d')} "
+                        f"({offered_shift.start_time.strftime('%H:%M')}-{offered_shift.end_time.strftime('%H:%M')}) "
+                        f"has been traded with {trade_request.author.full_name}.\n"
+                        f"Now you have new schedule on {original_shift.start_time.strftime('%Y-%m-%d')} "
+                        f"({original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')})"
+                    ),
+                    priority=NotificationPriority.HIGH,
+                ),
+            ]
+
+            for notification in notifications:
+                db.add(notification)
+
+            try:
+                db.commit()
+                logger.info("Trade acceptance completed successfully")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Database error during trade processing: {str(e)}")
+                raise
+
         except Exception as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to process trade acceptance: {str(e)}",
-            )
+            logger.error(f"Error in trade acceptance: {str(e)}")
+            raise
 
     @staticmethod
     async def _process_giveaway_acceptance(
         db: Session, trade_request: ShiftTrade, response: ShiftTradeResponse
     ):
-        # Transfer schedule to respondent
-        trade_request.original_shift.user_id = response.respondent_id
-        trade_request.status = TradeStatus.COMPLETED
+        try:
+            async with db.begin():  # 트랜잭션 시작
+                original_shift = trade_request.original_shift
+
+                # 1. Validate shift
+                if not original_shift:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, detail="Shift not found"
+                    )
+
+                # 2. Check if shift is still valid (not past)
+                current_time = datetime.now(timezone.utc)
+                if original_shift.start_time <= current_time:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot take past or current shifts",
+                    )
+
+                # 3. Check for schedule conflicts
+                if await ShiftTradeService._check_schedule_conflict(
+                    db,
+                    response.respondent_id,
+                    original_shift.start_time,
+                    original_shift.end_time,
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Schedule conflict detected for respondent",
+                    )
+
+                # 4. Store original user for notification
+                original_user_id = original_shift.user_id
+
+                # 5. Transfer the shift
+                original_shift.user_id = response.respondent_id
+
+                # 6. Update statuses
+                trade_request.status = TradeStatus.COMPLETED
+                response.status = ResponseStatus.ACCEPTED
+
+                # 7. Create notifications
+                notifications = [
+                    Notification(
+                        user_id=original_user_id,
+                        type=NotificationType.SHIFT_TRADE,
+                        title="Shift Giveaway Completed",
+                        message=f"Your shift has been successfully transferred",
+                        priority=NotificationPriority.HIGH,
+                        data={
+                            "trade_id": trade_request.id,
+                            "shift": {
+                                "date": original_shift.start_time.strftime("%Y-%m-%d"),
+                                "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
+                            },
+                            "type": "giveaway",
+                            "recipient": {
+                                "id": response.respondent_id,
+                                "name": response.respondent.full_name,
+                            },
+                        },
+                    ),
+                    Notification(
+                        user_id=response.respondent_id,
+                        type=NotificationType.SHIFT_TRADE,
+                        title="Shift Giveaway Completed",
+                        message=f"You have successfully received a new shift",
+                        priority=NotificationPriority.HIGH,
+                        data={
+                            "trade_id": trade_request.id,
+                            "shift": {
+                                "date": original_shift.start_time.strftime("%Y-%m-%d"),
+                                "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
+                            },
+                            "type": "giveaway",
+                            "giver": {
+                                "id": original_user_id,
+                                "name": trade_request.author.full_name,
+                            },
+                        },
+                    ),
+                ]
+
+                db.add_all(notifications)
+                db.add(original_shift)
+                db.add(trade_request)
+                db.add(response)
+
+                # 8. Reject other pending responses
+                pending_responses = (
+                    db.query(ShiftTradeResponse)
+                    .filter(
+                        ShiftTradeResponse.trade_request_id == trade_request.id,
+                        ShiftTradeResponse.id != response.id,
+                        ShiftTradeResponse.status == ResponseStatus.PENDING,
+                    )
+                    .all()
+                )
+
+                for pending_response in pending_responses:
+                    pending_response.status = ResponseStatus.REJECTED
+
+                    # Add rejection notifications
+                    reject_notification = Notification(
+                        user_id=pending_response.respondent_id,
+                        type=NotificationType.SHIFT_TRADE,
+                        title="Shift Giveaway Response Rejected",
+                        message="Another response has been accepted for this shift giveaway",
+                        priority=NotificationPriority.NORMAL,
+                        data={
+                            "trade_id": trade_request.id,
+                            "type": "giveaway_rejected",
+                        },
+                    )
+                    db.add(reject_notification)
+
+                db.add_all(pending_responses)
+
+                try:
+                    await db.flush()
+                except SQLAlchemyError as e:
+                    logger.error(f"Database error during giveaway processing: {str(e)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to process giveaway request",
+                    )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during giveaway processing: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred while processing the giveaway",
+            )
 
     @staticmethod
     async def _check_schedule_availability(db: Session, schedule_id: int) -> bool:

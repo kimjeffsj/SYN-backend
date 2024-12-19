@@ -65,7 +65,7 @@ async def create_trade_response(
 
 
 @router.patch(
-    "/{trade_id}/responses/{response_id}/status", response_model=ShiftTradeResponse
+    "/{trade_id}/responses/{response_id}/status", response_model=TradeResponseInfo
 )
 async def update_response_status(
     trade_id: int,
