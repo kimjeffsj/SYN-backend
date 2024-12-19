@@ -18,6 +18,56 @@ from sqlalchemy.orm import Session
 
 class ShiftTradeService:
     @staticmethod
+    async def _format_trade_response(response: ShiftTradeResponse) -> dict:
+        """Format trade response for API response"""
+        return {
+            "id": response.id,
+            "trade_request_id": response.trade_request_id,
+            "respondent": {
+                "id": response.respondent.id,
+                "name": response.respondent.full_name,
+                "position": response.respondent.position,
+            },
+            "offered_shift": {
+                "id": response.offered_shift.id,
+                "start_time": response.offered_shift.start_time.isoformat(),
+                "end_time": response.offered_shift.end_time.isoformat(),
+                "type": response.offered_shift.shift_type,
+            },
+            "content": response.content,
+            "status": response.status,
+            "created_at": response.created_at.isoformat(),
+            "updated_at": (
+                response.updated_at.isoformat() if response.updated_at else None
+            ),
+        }
+
+    @staticmethod
+    async def _format_trade_request(trade_request: ShiftTrade) -> dict:
+        return {
+            "id": trade_request.id,
+            "type": trade_request.type,
+            "author_id": trade_request.author_id,
+            "original_shift_id": trade_request.original_shift_id,
+            "preferred_shift_id": trade_request.preferred_shift_id,
+            "reason": trade_request.reason,
+            "status": trade_request.status,
+            "urgency": trade_request.urgency,
+            "created_at": trade_request.created_at,
+            "author": {
+                "id": trade_request.author.id,
+                "name": trade_request.author.full_name,
+                "position": trade_request.author.position,
+            },
+            "original_shift": {
+                "id": trade_request.original_shift.id,
+                "start_time": trade_request.original_shift.start_time.isoformat(),
+                "end_time": trade_request.original_shift.end_time.isoformat(),
+                "type": trade_request.original_shift.shift_type,
+            },
+        }
+
+    @staticmethod
     def get_trade_requests(
         db: Session,
         status: Optional[str] = None,
@@ -152,7 +202,9 @@ class ShiftTradeService:
             db.add(trade_request)
             db.commit()
             db.refresh(trade_request)
-            return trade_request
+
+            return await ShiftTradeService._format_trade_request(trade_request)
+
         except Exception as e:
             db.rollback()
             raise HTTPException(
@@ -163,7 +215,12 @@ class ShiftTradeService:
     async def create_trade_response(
         db: Session, trade_id: int, response_data: dict, user_id: int
     ) -> ShiftTradeResponse:
+
         trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+        print(f"Processing trade response - Trade ID: {trade_id}")
+        print(f"Trade request author: {trade_request.author_id}")
+        print(f"Responding user: {user_id}")
+        print(f"Response data: {response_data}")
 
         # Validate offered shift belongs to responding user
         offered_shift = (
@@ -175,6 +232,8 @@ class ShiftTradeService:
             .first()
         )
 
+        print(f"Offered shift: {offered_shift}")
+
         if not offered_shift:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -183,38 +242,67 @@ class ShiftTradeService:
 
         # Create response
         response = ShiftTradeResponse(
-            trade_request_id=trade_id, respondent_id=user_id, **response_data
+            trade_request_id=trade_id,
+            respondent_id=user_id,
+            offered_shift_id=response_data["offered_shift_id"],
+            content=response_data.get("content", ""),
         )
+        print(f"Created response object: {response.__dict__}")
 
         try:
             db.add(response)
+            print("Response added to DB")
             db.commit()
+            print("DB committed")
             db.refresh(response)
+            print("Response refreshed")
 
             # Send notification to trade request author
-            notification = Notification(
-                user_id=trade_request.author_id,
-                type=NotificationType.SHIFT_TRADE,
-                title="New Response to Your Trade Request",
-                message=f"New response received for your trade request",
-                priority=NotificationPriority.HIGH,
-                data={
-                    "trade_id": trade_id,
-                    "response_id": response.id,
-                    "type": "response_received",
-                },
-            )
-            db.add(notification)
-            db.commit()
-
-            await event_bus.publish(
-                Event(
-                    type=NotificationEventType.TRADE_RESPONDED,
-                    data={"trade_request": trade_request, "response": response},
+            try:
+                notification = Notification(
+                    user_id=trade_request.author_id,
+                    type=NotificationType.SHIFT_TRADE,
+                    title="New Response to Your Trade Request",  # title 필드 필요
+                    message=f"{response.respondent.full_name} has responded to your shift trade request",  # message 필드 필요
+                    priority=NotificationPriority.HIGH,
+                    data={  # content 대신 data 필드 사용
+                        "trade_id": trade_id,
+                        "response_id": response.id,
+                        "type": "response_received",
+                    },
                 )
-            )
+                print(f"Creating notification: {notification.__dict__}")
+                db.add(notification)
+                db.commit()
+                print("Notification created successfully")
 
-            return response
+                # Event publishing
+                try:
+                    formatted_trade = await ShiftTradeService._format_trade_request(
+                        trade_request
+                    )
+                    formatted_response = await ShiftTradeService._format_trade_response(
+                        response
+                    )
+
+                    await event_bus.publish(
+                        Event(
+                            type=NotificationEventType.TRADE_RESPONDED,
+                            data={
+                                "trade": formatted_trade,
+                                "response": formatted_response,
+                            },
+                        )
+                    )
+                    print("Event published successfully")
+                except Exception as e:
+                    print(f"Event publishing error: {str(e)}")
+                    # Don't raise here to prevent transaction rollback
+
+                return await ShiftTradeService._format_trade_response(response)
+            except Exception as e:
+                print(f"Notification error: {str(e)}")
+            raise
 
         except Exception as e:
             db.rollback()
@@ -227,6 +315,9 @@ class ShiftTradeService:
         db: Session, trade_id: int, response_id: int, status: str, user_id: int
     ) -> ShiftTradeResponse:
         trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+        print(
+            f"Processing trade response - Trade ID: {trade_id}, Response ID: {response_id}, Status: {status}"
+        )
 
         if trade_request.author_id != user_id:
             raise HTTPException(
@@ -252,10 +343,12 @@ class ShiftTradeService:
             response.status = status
             if status == ResponseStatus.ACCEPTED:
                 if trade_request.type == TradeType.TRADE:
+                    print("Processing trade acceptance...")
                     await ShiftTradeService._process_trade_acceptance(
                         db, trade_request, response
                     )
                 else:
+                    print("Processing giveaway acceptance...")
                     await ShiftTradeService._process_giveaway_acceptance(
                         db, trade_request, response
                     )
@@ -264,7 +357,9 @@ class ShiftTradeService:
                 db, trade_request, response
             )
             db.commit()
-            return response
+            print("Trade response processed successfully")
+
+            return await ShiftTradeService._format_trade_response(response)
 
         except Exception as e:
             db.rollback()
@@ -324,10 +419,27 @@ class ShiftTradeService:
         original_shift = trade_request.original_shift
         offered_shift = response.offered_shift
 
+        # Store original user IDs before swap
         original_user_id = original_shift.user_id
-        original_shift.user_id = response.respondent_id
-        offered_shift.user_id = original_user_id
-        trade_request.status = TradeStatus.COMPLETED
+        offered_user_id = offered_shift.user_id
+
+        try:
+            # Perform the swap
+            original_shift.user_id = offered_user_id
+            offered_shift.user_id = original_user_id
+
+            # Update trade request status
+            trade_request.status = TradeStatus.COMPLETED
+
+            # Explicitly update both shifts
+            db.add(original_shift)
+            db.add(offered_shift)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to process trade acceptance: {str(e)}",
+            )
 
     @staticmethod
     async def _process_giveaway_acceptance(

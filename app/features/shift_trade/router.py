@@ -6,6 +6,7 @@ from app.features.shift_trade.schemas import (
     ShiftTradeCreate,
     ShiftTradeResponse,
     TradeResponseCreate,
+    TradeResponseInfo,
     TradeResponseUpdate,
 )
 from app.features.shift_trade.service import ShiftTradeService
@@ -50,7 +51,7 @@ async def create_trade_request(
     )
 
 
-@router.post("/{trade_id}/responses", response_model=ShiftTradeResponse)
+@router.post("/{trade_id}/responses", response_model=TradeResponseInfo)
 async def create_trade_response(
     trade_id: int,
     response: TradeResponseCreate,
@@ -63,7 +64,9 @@ async def create_trade_response(
     )
 
 
-@router.patch("/{trade_id}/responses/{response_id}/status")
+@router.patch(
+    "/{trade_id}/responses/{response_id}/status", response_model=ShiftTradeResponse
+)
 async def update_response_status(
     trade_id: int,
     response_id: int,

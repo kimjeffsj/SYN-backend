@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from app.models.shift_trade import TradeStatus, TradeType, UrgencyLevel
+from app.models.shift_trade import ResponseStatus, TradeStatus, TradeType, UrgencyLevel
 from pydantic import BaseModel
 
 
@@ -41,8 +41,11 @@ class TradeResponseInfo(BaseModel):
     respondent: UserInfo
     offered_shift: ScheduleInfo
     content: Optional[str]
-    status: str
+    status: ResponseStatus
     created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class ShiftTradeResponse(ShiftTradeBase):
@@ -67,4 +70,4 @@ class TradeResponseCreate(BaseModel):
 
 
 class TradeResponseUpdate(BaseModel):
-    status: str  # ACCEPTED or REJECTED
+    status: ResponseStatus  # ACCEPTED or REJECTED
