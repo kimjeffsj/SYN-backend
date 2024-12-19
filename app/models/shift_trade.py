@@ -136,8 +136,8 @@ class ShiftTradeResponse(Base):
         ForeignKey("shift_trades.id", ondelete="CASCADE")
     )
     respondent_id: Mapped[int] = Column(ForeignKey("users.id", ondelete="CASCADE"))
-    offered_shift_id: Mapped[int] = Column(
-        ForeignKey("schedules.id", ondelete="CASCADE")
+    offered_shift_id: Mapped[Optional[int]] = Column(
+        ForeignKey("schedules.id", ondelete="CASCADE"), nullable=True
     )
 
     content: Mapped[str] = Column(String, nullable=True)

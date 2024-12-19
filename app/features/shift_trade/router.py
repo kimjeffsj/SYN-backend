@@ -6,11 +6,13 @@ from app.features.shift_trade.schemas import (
     ShiftTradeCreate,
     ShiftTradeResponse,
     TradeResponseCreate,
+    TradeResponseInfo,
     TradeResponseUpdate,
 )
 from app.features.shift_trade.service import ShiftTradeService
+from app.models.shift_trade import TradeType
 from app.models.user import User
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Shift Trade"])
@@ -50,7 +52,7 @@ async def create_trade_request(
     )
 
 
-@router.post("/{trade_id}/responses", response_model=ShiftTradeResponse)
+@router.post("/{trade_id}/responses", response_model=TradeResponseInfo)
 async def create_trade_response(
     trade_id: int,
     response: TradeResponseCreate,
@@ -63,7 +65,23 @@ async def create_trade_response(
     )
 
 
-@router.patch("/{trade_id}/responses/{response_id}/status")
+@router.get("/{trade_id}/check-availability")
+async def check_trade_availability(
+    trade_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check if current user can take this shift"""
+    trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+    is_available = await ShiftTradeService.check_schedule_availability(
+        db, current_user.id, trade_request.original_shift
+    )
+    return {"is_available": is_available}
+
+
+@router.patch(
+    "/{trade_id}/responses/{response_id}/status", response_model=TradeResponseInfo
+)
 async def update_response_status(
     trade_id: int,
     response_id: int,
@@ -75,6 +93,30 @@ async def update_response_status(
     return await ShiftTradeService.update_response_status(
         db, trade_id, response_id, update.status, current_user.id
     )
+
+
+@router.post("/{trade_id}/accept-giveaway")
+async def accept_giveaway(
+    trade_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Accept a shift giveaway"""
+    trade_request = ShiftTradeService.get_trade_request(db, trade_id)
+
+    if trade_request.type != TradeType.GIVEAWAY:
+        raise HTTPException(
+            status_code=400, detail="This endpoint is only for giveaways"
+        )
+
+    # Check conflicts
+    if not await ShiftTradeService.check_schedule_availability(
+        db, current_user.id, trade_request.original_shift
+    ):
+        raise HTTPException(
+            status_code=400, detail="You have a conflict with this shift"
+        )
+    return await ShiftTradeService.process_giveaway(db, trade_request, current_user.id)
 
 
 @router.delete("/{trade_id}/cancel")
