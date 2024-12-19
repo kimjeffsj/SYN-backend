@@ -124,7 +124,6 @@ async def get_user_from_token(token: str, db: Session) -> Optional[User]:
         return None
 
 
-# Token blacklist (In-memory storage - Consider using Redis in production)
 token_blacklist = set()
 
 

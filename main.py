@@ -9,7 +9,7 @@ from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.notifications import router as notification_router
 from app.features.notifications import ws_router
-from app.features.notifications.events import register_notification_handlers  # 추가
+from app.features.notifications.events import register_notification_handlers
 from app.features.notifications.ws_manager import notification_manager
 from app.features.schedule import admin_router as schedule_admin_router
 from app.features.schedule import router as schedule_router
