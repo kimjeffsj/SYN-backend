@@ -2,14 +2,11 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy.exc import SQLAlchemyError
-
-logger = logging.getLogger(__name__)
-
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
 from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
+from app.models.schedule_enums import ScheduleStatus
 from app.models.shift_trade import (
     ResponseStatus,
     ShiftTrade,
@@ -19,14 +16,17 @@ from app.models.shift_trade import (
 )
 from app.models.user import User
 from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class ShiftTradeService:
     @staticmethod
     async def _format_trade_response(response: ShiftTradeResponse) -> dict:
         """Format trade response for API response"""
-        return {
+        formatted_response = {
             "id": response.id,
             "trade_request_id": response.trade_request_id,
             "respondent": {
@@ -34,12 +34,7 @@ class ShiftTradeService:
                 "name": response.respondent.full_name,
                 "position": response.respondent.position,
             },
-            "offered_shift": {
-                "id": response.offered_shift.id,
-                "start_time": response.offered_shift.start_time.isoformat(),
-                "end_time": response.offered_shift.end_time.isoformat(),
-                "type": response.offered_shift.shift_type,
-            },
+            "offered_shift": None,
             "content": response.content,
             "status": response.status,
             "created_at": response.created_at.isoformat(),
@@ -47,6 +42,15 @@ class ShiftTradeService:
                 response.updated_at.isoformat() if response.updated_at else None
             ),
         }
+        if response.offered_shift:
+            formatted_response["offered_shift"] = {
+                "id": response.offered_shift.id,
+                "start_time": response.offered_shift.start_time.isoformat(),
+                "end_time": response.offered_shift.end_time.isoformat(),
+                "type": response.offered_shift.shift_type,
+            }
+
+        return formatted_response
 
     @staticmethod
     async def _format_trade_request(trade_request: ShiftTrade) -> dict:
@@ -112,16 +116,20 @@ class ShiftTradeService:
                     "name": trade.author.full_name,
                     "position": trade.author.position,
                 },
-                "original_shift": {
-                    "id": trade.original_shift.id,
-                    "start_time": trade.original_shift.start_time.strftime(
-                        "%Y-%m-%d %H:%M"
-                    ),
-                    "end_time": trade.original_shift.end_time.strftime(
-                        "%Y-%m-%d %H:%M"
-                    ),
-                    "type": trade.original_shift.shift_type,
-                },
+                "original_shift": (
+                    {
+                        "id": trade.original_shift.id,
+                        "start_time": trade.original_shift.start_time.strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "end_time": trade.original_shift.end_time.strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "type": trade.original_shift.shift_type,
+                    }
+                    if trade.original_shift
+                    else None
+                ),
                 "preferred_shift": (
                     {
                         "id": trade.preferred_shift.id,
@@ -144,21 +152,27 @@ class ShiftTradeService:
                             "name": response.respondent.full_name,
                             "position": response.respondent.position,
                         },
-                        "offered_shift": {
-                            "id": response.offered_shift.id,
-                            "start_time": response.offered_shift.start_time.strftime(
-                                "%Y-%m-%d %H:%M"
-                            ),
-                            "end_time": response.offered_shift.end_time.strftime(
-                                "%Y-%m-%d %H:%M"
-                            ),
-                            "type": response.offered_shift.shift_type,
-                        },
+                        "offered_shift": (
+                            {
+                                "id": response.offered_shift.id,
+                                "start_time": response.offered_shift.start_time.strftime(
+                                    "%Y-%m-%d %H:%M"
+                                ),
+                                "end_time": response.offered_shift.end_time.strftime(
+                                    "%Y-%m-%d %H:%M"
+                                ),
+                                "type": response.offered_shift.shift_type,
+                            }
+                            if response.offered_shift
+                            else None
+                        ),
                         "content": response.content,
                         "status": response.status,
                         "created_at": response.created_at,
                     }
                     for response in trade.responses
+                    if response.respondent
+                    and (response.offered_shift or trade.type == "GIVEAWAY")
                 ],
             }
             for trade in trades
@@ -194,8 +208,8 @@ class ShiftTradeService:
             )
 
         # Check for existing active trade request
-        if not await ShiftTradeService._check_schedule_availability(
-            db, original_shift.id
+        if not await ShiftTradeService.check_schedule_availability(
+            db, original_shift.id, original_shift
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -385,6 +399,34 @@ class ShiftTradeService:
             )
 
     @staticmethod
+    async def process_giveaway(
+        db: Session, trade_request: ShiftTrade, respondent_id: int
+    ) -> ShiftTrade:
+        """Process giveaway"""
+        try:
+            response = ShiftTradeResponse(
+                trade_request_id=trade_request.id,
+                respondent_id=respondent_id,
+                status=ResponseStatus.ACCEPTED,
+            )
+            db.add(response)
+
+            # Giveaway 처리
+            await ShiftTradeService._process_giveaway_acceptance(
+                db, trade_request, response
+            )
+
+            trade_request.status = TradeStatus.COMPLETED
+            db.commit()
+            db.refresh(trade_request)
+            return trade_request
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=500, detail=f"Failed to process giveaway: {str(e)}"
+            )
+
+    @staticmethod
     async def cancel_trade_request(db: Session, trade_id: int, user_id: int):
         trade_request = ShiftTradeService.get_trade_request(db, trade_id)
 
@@ -515,151 +557,88 @@ class ShiftTradeService:
     async def _process_giveaway_acceptance(
         db: Session, trade_request: ShiftTrade, response: ShiftTradeResponse
     ):
+        """Transfer schedule to respondent"""
+
+        original_shift = trade_request.original_shift
+        respondent_id = response.respondent_id
+
         try:
-            async with db.begin():  # 트랜잭션 시작
-                original_shift = trade_request.original_shift
+            # Transfer schedule to respondent
+            original_shift.user_id = respondent_id
 
-                # 1. Validate shift
-                if not original_shift:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND, detail="Shift not found"
-                    )
+            # Update trade request status
+            trade_request.status = TradeStatus.COMPLETED
 
-                # 2. Check if shift is still valid (not past)
-                current_time = datetime.now(timezone.utc)
-                if original_shift.start_time <= current_time:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Cannot take past or current shifts",
-                    )
+            # Update shift
+            db.add(original_shift)
+            db.commit()
 
-                # 3. Check for schedule conflicts
-                if await ShiftTradeService._check_schedule_conflict(
-                    db,
-                    response.respondent_id,
-                    original_shift.start_time,
-                    original_shift.end_time,
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Schedule conflict detected for respondent",
-                    )
-
-                # 4. Store original user for notification
-                original_user_id = original_shift.user_id
-
-                # 5. Transfer the shift
-                original_shift.user_id = response.respondent_id
-
-                # 6. Update statuses
-                trade_request.status = TradeStatus.COMPLETED
-                response.status = ResponseStatus.ACCEPTED
-
-                # 7. Create notifications
-                notifications = [
-                    Notification(
-                        user_id=original_user_id,
-                        type=NotificationType.SHIFT_TRADE,
-                        title="Shift Giveaway Completed",
-                        message=f"Your shift has been successfully transferred",
-                        priority=NotificationPriority.HIGH,
-                        data={
-                            "trade_id": trade_request.id,
-                            "shift": {
-                                "date": original_shift.start_time.strftime("%Y-%m-%d"),
-                                "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
-                            },
-                            "type": "giveaway",
-                            "recipient": {
-                                "id": response.respondent_id,
-                                "name": response.respondent.full_name,
-                            },
+            # Create notification
+            notification = Notification(
+                user_id=trade_request.author_id,
+                type=NotificationType.SHIFT_TRADE,
+                title="Shift Giveaway Completed",
+                message=f"Your shift on {original_shift.start_time.strftime('%Y-%m-%d')} has been given away",
+                priority=NotificationPriority.HIGH,
+                data={
+                    "trade_id": trade_request.id,
+                    "type": "giveaway_completed",
+                    "shift": {
+                        "date": original_shift.start_time.strftime("%Y-%m-%d"),
+                        "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
+                        "new_owner": {
+                            "id": respondent_id,
+                            "name": response.respondent.full_name,
                         },
-                    ),
-                    Notification(
-                        user_id=response.respondent_id,
-                        type=NotificationType.SHIFT_TRADE,
-                        title="Shift Giveaway Completed",
-                        message=f"You have successfully received a new shift",
-                        priority=NotificationPriority.HIGH,
-                        data={
-                            "trade_id": trade_request.id,
-                            "shift": {
-                                "date": original_shift.start_time.strftime("%Y-%m-%d"),
-                                "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
-                            },
-                            "type": "giveaway",
-                            "giver": {
-                                "id": original_user_id,
-                                "name": trade_request.author.full_name,
-                            },
-                        },
-                    ),
-                ]
+                    },
+                },
+            )
+            db.add(notification)
 
-                db.add_all(notifications)
-                db.add(original_shift)
-                db.add(trade_request)
-                db.add(response)
-
-                # 8. Reject other pending responses
-                pending_responses = (
-                    db.query(ShiftTradeResponse)
-                    .filter(
-                        ShiftTradeResponse.trade_request_id == trade_request.id,
-                        ShiftTradeResponse.id != response.id,
-                        ShiftTradeResponse.status == ResponseStatus.PENDING,
-                    )
-                    .all()
-                )
-
-                for pending_response in pending_responses:
-                    pending_response.status = ResponseStatus.REJECTED
-
-                    # Add rejection notifications
-                    reject_notification = Notification(
-                        user_id=pending_response.respondent_id,
-                        type=NotificationType.SHIFT_TRADE,
-                        title="Shift Giveaway Response Rejected",
-                        message="Another response has been accepted for this shift giveaway",
-                        priority=NotificationPriority.NORMAL,
-                        data={
-                            "trade_id": trade_request.id,
-                            "type": "giveaway_rejected",
-                        },
-                    )
-                    db.add(reject_notification)
-
-                db.add_all(pending_responses)
-
-                try:
-                    await db.flush()
-                except SQLAlchemyError as e:
-                    logger.error(f"Database error during giveaway processing: {str(e)}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Failed to process giveaway request",
-                    )
-
-        except HTTPException:
-            raise
+            # Create notification for the respondent
+            respondent_notification = Notification(
+                user_id=respondent_id,
+                type=NotificationType.SHIFT_TRADE,
+                title="Shift Giveaway Accepted",
+                message=(
+                    f"You have taken a shift for {original_shift.start_time.strftime('%Y-%m-%d')} "
+                    f"({original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')})."
+                ),
+                priority=NotificationPriority.HIGH,
+                data={
+                    "trade_id": trade_request.id,
+                    "type": "giveaway_received",
+                    "shift": {
+                        "date": original_shift.start_time.strftime("%Y-%m-%d"),
+                        "time": f"{original_shift.start_time.strftime('%H:%M')}-{original_shift.end_time.strftime('%H:%M')}",
+                    },
+                },
+            )
+            db.add(respondent_notification)
+            db.commit()
         except Exception as e:
-            logger.error(f"Unexpected error during giveaway processing: {str(e)}")
+            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred while processing the giveaway",
+                detail=f"Failed to process giveaway acceptance: {str(e)}",
             )
 
     @staticmethod
-    async def _check_schedule_availability(db: Session, schedule_id: int) -> bool:
-        return (
-            not db.query(ShiftTrade)
+    async def check_schedule_availability(
+        db: Session, user_id: int, schedule: Schedule
+    ) -> bool:
+        """Check if user has any conflicting schedules"""
+        conflicting_schedule = (
+            db.query(Schedule)
             .filter(
-                ShiftTrade.original_shift_id == schedule_id,
-                ShiftTrade.status == TradeStatus.OPEN,
+                Schedule.user_id == user_id,
+                Schedule.status != ScheduleStatus.CANCELLED,
+                Schedule.start_time < schedule.end_time,
+                Schedule.end_time > schedule.start_time,
             )
             .first()
         )
+        return conflicting_schedule is None
 
     @staticmethod
     async def _send_response_notifications(

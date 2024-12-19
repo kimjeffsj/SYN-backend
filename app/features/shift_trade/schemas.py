@@ -39,7 +39,7 @@ class UserInfo(BaseModel):
 class TradeResponseInfo(BaseModel):
     id: int
     respondent: UserInfo
-    offered_shift: ScheduleInfo
+    offered_shift: Optional[ScheduleInfo]
     content: Optional[str]
     status: ResponseStatus
     created_at: datetime
