@@ -23,7 +23,7 @@ class Announcement(Base):
 
     author = relationship("User", foreign_keys=[created_by], backref="announcements")
     read_by = relationship(
-        "User", secondary="announcement_reads", backref="read_announcements"
+        "User", secondary="announcement_reads", back_populates="read_announcements"
     )
 
     @property
@@ -54,14 +54,8 @@ class Announcement(Base):
 
 
 class AnnouncementRead(Base):
-    """Tracks which users have read which announcements"""
-
     __tablename__ = "announcement_reads"
 
-    announcement_id: Mapped[int] = Column(
-        ForeignKey("announcements.id"), primary_key=True
-    )
-    user_id: Mapped[int] = Column(ForeignKey("users.id"), primary_key=True)
-    read_at: Mapped[datetime] = Column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    announcement_id = Column(Integer, ForeignKey("announcements.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    read_at = Column(DateTime(timezone=True), server_default=func.now())

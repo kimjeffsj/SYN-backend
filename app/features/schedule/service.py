@@ -59,7 +59,9 @@ class ScheduleService:
 
     @staticmethod
     def get_all_schedules(
-        db: Session, search_params: Optional[dict] = None
+        db: Session,
+        search_params: Optional[dict] = None,
+        admin_id: int = None,
     ) -> List[Schedule]:
         """Get all schedules with optional filtering"""
         query = db.query(Schedule)
