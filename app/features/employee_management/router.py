@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 router = APIRouter(tags=["Employee Management"])
 
 
-@router.post("/employees", response_model=EmployeeResponse)
+@router.post("/", response_model=EmployeeResponse)
 async def create_employee(
     data: EmployeeCreate,
     db: Session = Depends(get_db),
@@ -25,7 +25,7 @@ async def create_employee(
     return await EmployeeManagementService.create_employee(db, data)
 
 
-@router.get("/employees", response_model=list[EmployeeResponse])
+@router.get("/", response_model=list[EmployeeResponse])
 async def get_employees(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
@@ -36,7 +36,7 @@ async def get_employees(
     return await EmployeeManagementService.get_employees(db, skip, limit, search)
 
 
-@router.get("/employees/{employee_id}", response_model=EmployeeDetailResponse)
+@router.get("/{employee_id}", response_model=EmployeeDetailResponse)
 async def get_employee(
     employee_id: int,
     db: Session = Depends(get_db),
@@ -45,7 +45,7 @@ async def get_employee(
     return await EmployeeManagementService.get_employee(db, employee_id)
 
 
-@router.patch("/employees/{employee_id}", response_model=EmployeeResponse)
+@router.patch("/{employee_id}", response_model=EmployeeResponse)
 async def update_employee(
     employee_id: int,
     data: EmployeeUpdate,
