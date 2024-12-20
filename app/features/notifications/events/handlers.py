@@ -25,7 +25,7 @@ async def handle_schedule_update_notification(event: Event, db: Session) -> None
         # Check if notification already exists in event data
         if not notification:
             notification_data = {
-                "user_id": schedule.user_id,
+                "user_id": schedule("user_id"),
                 "type": NotificationType.SCHEDULE_CHANGE,
                 "title": "Schedule Updated",
                 "message": f"Your schedule for {schedule.start_time.strftime('%Y-%m-%d')} has been updated",
@@ -36,7 +36,7 @@ async def handle_schedule_update_notification(event: Event, db: Session) -> None
                     "time": f"{schedule.start_time.strftime('%H:%M')}-{schedule.end_time.strftime('%H:%M')}",
                     "status": schedule.status.value,
                 },
-                "status": "PENDING",
+                "status": NotificationStatus.PENDING,
             }
 
             notification = Notification(**notification_data)
@@ -45,12 +45,11 @@ async def handle_schedule_update_notification(event: Event, db: Session) -> None
 
         # Send real-time notification
         sent = await notification_manager.send_notification(
-            schedule.user_id, notification.to_dict()
+            schedule["user_id"], notification.to_dict()
         )
 
         if sent:
-            notification.status = "sent"
-            notification.sent_at = datetime.now(timezone.utc)
+            notification.mark_as_sent()
 
         db.commit()
 
