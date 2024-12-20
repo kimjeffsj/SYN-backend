@@ -21,10 +21,12 @@ router = APIRouter(tags=["Admin"])
 
 @router.get("/", response_model=List[ScheduleResponse])
 async def get_all_schedules(
-    db: Session = Depends(get_db), search_params: ScheduleSearchParams = Depends()
+    db: Session = Depends(get_db),
+    search_params: ScheduleSearchParams = Depends(),
+    admin: User = Depends(get_current_admin_user),
 ):
     """Get all schedules with optional filtering"""
-    return ScheduleService.get_all_schedules(db, search_params.model_dump())
+    return ScheduleService.get_all_schedules(db, search_params.model_dump(), admin.id)
 
 
 @router.post("/", response_model=ScheduleResponse)
@@ -34,7 +36,7 @@ async def create_schedule(
     admin: User = Depends(get_current_admin_user),
 ):
     """Create a new schedule"""
-    return ScheduleService.create_schedule(db, schedule.model_dump(), admin.id)
+    return await ScheduleService.create_schedule(db, schedule.model_dump(), admin.id)
 
 
 @router.post("/bulk", response_model=List[ScheduleResponse])
