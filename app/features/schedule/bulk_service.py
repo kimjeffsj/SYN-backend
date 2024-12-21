@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
 from typing import List, Optional, Union
 
+from app.core.events import Event, event_bus
+from app.features.notifications.events.types import NotificationEventType
+from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus
 from app.models.user import User
@@ -9,6 +12,32 @@ from sqlalchemy.orm import Session
 
 
 class BulkScheduleService:
+    @staticmethod
+    def _format_schedule(schedule: Schedule) -> dict:
+        """Format schedule for API response"""
+        return {
+            "id": schedule.id,
+            "user_id": schedule.user_id,
+            "user": {
+                "id": schedule.user.id,
+                "name": schedule.user.full_name,
+                "position": schedule.user.position,
+                "department": schedule.user.department,
+            },
+            "start_time": schedule.start_time.isoformat(),
+            "end_time": schedule.end_time.isoformat(),
+            "shift_type": schedule.shift_type.value,
+            "status": schedule.status.value,
+            "description": schedule.description,
+            "created_by": schedule.created_by,
+            "created_at": (
+                schedule.created_at.isoformat() if schedule.created_at else None
+            ),
+            "updated_at": (
+                schedule.updated_at.isoformat() if schedule.updated_at else None
+            ),
+        }
+
     @staticmethod
     async def validate_schedules(db: Session, schedules: List[dict]) -> bool:
         """Validate bulk schedule creation request"""
@@ -46,7 +75,7 @@ class BulkScheduleService:
                 schedule = Schedule(
                     **schedule_data,
                     created_by=created_by,
-                    status=ScheduleStatus.PENDING,
+                    status=ScheduleStatus.CONFIRMED,
                 )
                 db.add(schedule)
                 created_schedules.append(schedule)
@@ -55,7 +84,31 @@ class BulkScheduleService:
             for schedule in created_schedules:
                 db.refresh(schedule)
 
-            return created_schedules
+                formatted_schedule = BulkScheduleService._format_schedule(schedule)
+                notification = Notification(
+                    user_id=schedule.user_id,
+                    type=NotificationType.SCHEDULE_CHANGE,
+                    title="New Schedule Assignment",
+                    message=f"New schedule assigned for {schedule.start_time.strftime('%Y-%m-%d')}",
+                    priority=NotificationPriority.NORMAL,
+                    data=formatted_schedule,
+                )
+
+            db.add(notification)
+            db.commit()
+
+            # Event for real-time notification
+            await event_bus.publish(
+                Event(
+                    type=NotificationEventType.SCHEDULE_UPDATED,
+                    data={"schedule": formatted_schedule, "notification": notification},
+                )
+            )
+
+            return [
+                BulkScheduleService._format_schedule(schedule)
+                for schedule in created_schedules
+            ]
 
         except Exception as e:
             db.rollback()

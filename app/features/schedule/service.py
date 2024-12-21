@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
+from app.features.schedule.bulk_service import BulkScheduleService
 from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus, ShiftType
@@ -52,12 +53,17 @@ class ScheduleService:
     @staticmethod
     def get_user_schedules(db: Session, user_id: int) -> List[Schedule]:
         """Get all schedules for a specific user"""
-        return (
+        schedules = (
             db.query(Schedule)
+            .options(joinedload(Schedule.user))
             .filter(Schedule.user_id == user_id)
             .order_by(Schedule.start_time.desc())
             .all()
         )
+
+        return [
+            BulkScheduleService._format_schedule(schedule) for schedule in schedules
+        ]
 
     @staticmethod
     def get_all_schedules(
@@ -144,7 +150,7 @@ class ScheduleService:
                 )
             )
 
-            return schedule
+            return formatted_schedule
 
         except Exception as e:
             db.rollback()
