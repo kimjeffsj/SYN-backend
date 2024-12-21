@@ -18,7 +18,7 @@ class BulkScheduleService:
             if not user:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"User {schedule["user_id"]} not found",
+                    detail=f"User {schedule['user_id']} not found",
                 )
 
             # Check schedule conflicts
@@ -27,7 +27,7 @@ class BulkScheduleService:
             ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Schedule conflict found for user {schedule["user.id"]}",
+                    detail=f"Schedule conflict found for user {schedule['user.id']}",
                 )
 
         return True
