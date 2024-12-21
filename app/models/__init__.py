@@ -1,9 +1,16 @@
 from .announcement import Announcement, AnnouncementRead
 from .base import Base
-from .notification import Notification, NotificationType
+from .events import Event, EventType
+from .notification import (
+    Notification,
+    NotificationPriority,
+    NotificationStatus,
+    NotificationType,
+)
 from .schedule import Schedule
 from .schedule_enums import RepeatFrequency, ScheduleStatus, ShiftType
 from .shift_trade import (
+    ResponseStatus,
     ShiftTrade,
     ShiftTradeResponse,
     TradeStatus,
@@ -23,6 +30,7 @@ __all__ = [
     "Notification",
     "Announcement",
     "AnnouncementRead",
+    "Event",
     # Enums
     "ShiftType",
     "ScheduleStatus",
@@ -31,4 +39,8 @@ __all__ = [
     "TradeType",
     "UrgencyLevel",
     "NotificationType",
+    "NotificationStatus",
+    "NotificationPriority",
+    "ResponseStatus",
+    "EventType",
 ]

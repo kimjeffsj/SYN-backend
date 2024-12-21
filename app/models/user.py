@@ -1,14 +1,12 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import List, Optional
 
 from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, relationship
 
 from .base import Base
-
-if TYPE_CHECKING:
-    from .notification import Notification
-    from .schedule import Schedule
+from .notification import Notification
+from .schedule import Schedule
 
 
 class User(Base):
@@ -24,9 +22,11 @@ class User(Base):
     role: Mapped[str] = Column(String)  # "admin" or "employee"
 
     # Profile fields
-    department: Mapped[Optional[str]] = Column(String, nullable=True)
-    position: Mapped[Optional[str]] = Column(String, nullable=True)
+
+    department: Mapped[str] = Column(String, nullable=True)
+    position: Mapped[str] = Column(String, nullable=True)
     avatar: Mapped[Optional[str]] = Column(String, nullable=True)
+    comment: Mapped[Optional[str]] = Column(String, nullable=True)
 
     # Status and security fields
     is_active: Mapped[bool] = Column(Boolean, default=True)
@@ -64,17 +64,37 @@ class User(Base):
         "Notification", back_populates="user", cascade="all, delete-orphan"
     )
 
+    trade_requests = relationship("ShiftTrade", back_populates="author")
+    read_announcements = relationship(
+        "Announcement", secondary="announcement_reads", back_populates="read_by"
+    )
+
+    def get_current_month_stats(self) -> dict:
+        """Get statistics for the current month"""
+        # Get current month's first and last day
+        today = datetime.now()
+        month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # Calculate total hours worked this month
+        monthly_hours = sum(
+            (schedule.end_time - schedule.start_time).total_seconds() / 3600
+            for schedule in self.schedules
+            if (schedule.start_time >= month_start and schedule.status == "completed")
+        )
+
+        # Calculate total working days this month
+        worked_days = len(
+            set(
+                schedule.start_time.date()
+                for schedule in self.schedules
+                if (
+                    schedule.start_time >= month_start
+                    and schedule.status == "completed"
+                )
+            )
+        )
+
+        return {"monthly_hours": round(monthly_hours, 1), "worked_days": worked_days}
+
     def __repr__(self) -> str:
         return f"<User {self.id}: {self.email}>"
-
-    @property
-    def is_admin(self) -> bool:
-        return self.role == "admin"
-
-    @property
-    def pending_requests_count(self) -> int:
-        return len([s for s in self.schedules if s.status == "pending"])
-
-    @property
-    def completed_shifts_count(self) -> int:
-        return len([s for s in self.schedules if s.status == "completed"])

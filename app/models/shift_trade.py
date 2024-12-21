@@ -61,7 +61,7 @@ class ShiftTrade(Base):
     )
 
     # Relationships
-    author = relationship("User", backref="trade_requests")
+    author = relationship("User", back_populates="trade_requests")
     original_shift = relationship("Schedule", foreign_keys=[original_shift_id])
     preferred_shift = relationship("Schedule", foreign_keys=[preferred_shift_id])
     responses = relationship(
