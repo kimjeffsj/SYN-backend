@@ -43,3 +43,32 @@ class EmployeeDetailResponse(EmployeeResponse):
     is_on_leave: bool
     leave_balance: int
     last_active_at: Optional[datetime]
+
+
+# Department and position
+class DepartmentCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class PositionCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class DepartmentResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PositionResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True

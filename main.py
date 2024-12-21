@@ -7,6 +7,8 @@ from app.features.admin_dashboard import router as admin_dashboard_router
 from app.features.announcements import router as announcement_router
 from app.features.auth import router as auth_router
 from app.features.employee_dashboard import router as employee_dashboard_router
+from app.features.employee_management import department_router as department_router
+from app.features.employee_management import position_router as position_router
 from app.features.employee_management import router as employee_router
 from app.features.notifications import router as notification_router
 from app.features.notifications import ws_router
@@ -98,6 +100,15 @@ app.include_router(
 # Employee management routers
 app.include_router(
     employee_router, prefix="/admin/employees", tags=["Employee Management"]
+)
+
+app.include_router(
+    department_router,
+    prefix="/admin/departments",
+    tags=["Employee Management"],
+)
+app.include_router(
+    position_router, prefix="/admin/positions", tags=["Employee Management"]
 )
 
 

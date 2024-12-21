@@ -1,17 +1,27 @@
-from .router import router
+from .router import department_router, position_router, router
 from .schemas import (
+    DepartmentCreate,
+    DepartmentResponse,
     EmployeeCreate,
     EmployeeDetailResponse,
     EmployeeResponse,
     EmployeeUpdate,
+    PositionCreate,
+    PositionResponse,
 )
 from .service import EmployeeManagementService
 
 __all__ = [
     "router",
-    "EmployeeCreate",
-    "EmployeeDetailResponse",
-    "EmployeeResponse",
-    "EmployeeUpdate",
+    "department_router",
+    "position_router",
     "EmployeeManagementService",
+    "EmployeeCreate",
+    "EmployeeUpdate",
+    "EmployeeResponse",
+    "EmployeeDetailResponse",
+    "DepartmentCreate",
+    "DepartmentResponse",
+    "PositionCreate",
+    "PositionResponse",
 ]
