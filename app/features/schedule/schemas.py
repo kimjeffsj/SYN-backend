@@ -45,6 +45,7 @@ class ScheduleResponse(ScheduleBase):
 
     id: int
     user_id: int
+    user: dict
     status: ScheduleStatus
     created_by: int
     created_at: datetime
