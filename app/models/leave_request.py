@@ -27,7 +27,7 @@ class LeaveRequest(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     employee_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
 
     leave_type: Mapped[str] = mapped_column(Enum(LeaveType), nullable=False)

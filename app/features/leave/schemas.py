@@ -14,10 +14,16 @@ class LeaveRequestBase(BaseModel):
     reason: str
 
     @field_validator("end_date")
-    def validate_end_date(cls, v: datetime, values: dict) -> datetime:
-        start_date = values.get("start_date")
+    def validate_end_date(cls, v: datetime, info):
+        start_date = info.data.get("start_date")
         if start_date and v < start_date:
-            raise ValueError("End Date must be greater than Start date")
+            raise ValueError("End date must be after start date")
+        return v
+
+    @field_validator("start_date")
+    def validate_start_date(cls, v: datetime):
+        if v.date() < datetime.now().date():
+            raise ValueError("Start date cannot be in the past")
         return v
 
 
@@ -46,12 +52,19 @@ class AdminResponse(BaseModel):
         from_attributes = True
 
 
+class RequestEmployee(BaseModel):
+    id: int
+    name: str
+    position: str
+    department: str
+
+
 class LeaveRequestResponse(LeaveRequestBase):
     """Schema for leave request response"""
 
     id: int
     employee_id: int
-    employee: dict
+    employee: RequestEmployee
     status: LeaveStatus
     created_at: datetime
     updated_at: Optional[datetime] = None

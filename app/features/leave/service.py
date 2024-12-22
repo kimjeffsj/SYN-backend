@@ -16,31 +16,43 @@ from sqlalchemy.orm import Session
 class LeaveRequestService:
     @staticmethod
     def _format_leave_request(request: LeaveRequest) -> dict:
-        """Format leave request for api"""
+        """Format leave request to dict for response"""
+
+        employee_data = {
+            "id": request.employee.id,
+            "name": request.employee.full_name,  # full_name -> name으로 매핑
+            "position": request.employee.position,
+            "department": request.employee.department,
+        }
+
         formatted = {
             "id": request.id,
             "employee_id": request.employee_id,
-            "employee": {
-                "id": request.employee.id,
-                "name": request.employee.full_name,
-                "position": request.employee.position,
-                "department": request.employee.department,
-            },
+            "employee": employee_data,
             "leave_type": request.leave_type,
-            "start_date": request.start_date,
-            "end_date": request.end_date,
+            "start_date": (
+                request.start_date.isoformat() if request.start_date else None
+            ),
+            "end_date": request.end_date.isoformat() if request.end_date else None,
             "reason": request.reason,
             "status": request.status,
-            "created_at": request.created_at,
-            "updated_at": request.updated_at,
+            "created_at": (
+                request.created_at.isoformat() if request.created_at else None
+            ),
+            "updated_at": (
+                request.updated_at.isoformat() if request.updated_at else None
+            ),
         }
 
+        # Add admin response if exists
         if request.admin_id:
             formatted["admin_response"] = {
                 "admin_id": request.admin_id,
                 "admin_name": request.admin.full_name,
                 "comment": request.admin_comment,
-                "processed_at": request.processed_at,
+                "processed_at": (
+                    request.processed_at.isoformat() if request.processed_at else None
+                ),
             }
 
         return formatted
@@ -123,10 +135,11 @@ class LeaveRequestService:
                 )
             )
 
-            return leave_request
+            return LeaveRequestService._format_leave_request(leave_request)
 
         except Exception as e:
             db.rollback()
+            print(f"Failed to create leave request: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to create leave request: {str(e)}",
@@ -139,7 +152,7 @@ class LeaveRequestService:
         admin_id: int,
         status: LeaveStatus,
         comment: Optional[str] = None,
-    ) -> LeaveRequest:
+    ) -> dict:
         """Process leave request"""
         leave_request = LeaveRequestService.get_leave_request(db, request_id)
 
@@ -190,20 +203,23 @@ class LeaveRequestService:
 
             db.add(notification)
             db.commit()
+            db.refresh(leave_request)  # Refresh to get updated data
+
+            formatted_response = LeaveRequestService._format_leave_request(
+                leave_request
+            )
 
             await event_bus.publish(
                 Event(
                     type=NotificationEventType.LEAVE_RESPONDED,
                     data={
-                        "leave_request": LeaveRequestService._format_leave_request(
-                            leave_request
-                        ),
+                        "leave_request": formatted_response,
                         "notification": notification.to_dict(),
                     },
                 )
             )
 
-            return leave_request
+            return formatted_response
 
         except Exception as e:
             db.rollback()
