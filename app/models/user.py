@@ -22,8 +22,10 @@ class User(Base):
     hashed_password: Mapped[str] = Column(String)
     role: Mapped[str] = Column(String)  # "admin" or "employee"
 
-    # Profile fields
+    # For Demo
+    is_demo: Mapped[bool] = Column(Boolean, default=False)
 
+    # Profile fields
     department: Mapped[str] = Column(String, nullable=True)
     position: Mapped[str] = Column(String, nullable=True)
     avatar: Mapped[Optional[str]] = Column(String, nullable=True)
