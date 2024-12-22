@@ -13,6 +13,6 @@ services:
           property: connectionString
 
 databases:
-  - name: syn-db
+  - name: syn_db
     databaseName: syndb
     user: syn
