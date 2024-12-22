@@ -1,6 +1,7 @@
 from .announcement import Announcement, AnnouncementRead
 from .base import Base
 from .events import Event, EventType
+from .leave_request import LeaveRequest, LeaveStatus, LeaveType
 from .notification import (
     Notification,
     NotificationPriority,
@@ -42,5 +43,8 @@ __all__ = [
     "NotificationStatus",
     "NotificationPriority",
     "ResponseStatus",
+    "LeaveRequest",
+    "LeaveStatus",
+    "LeaveType",
     "EventType",
 ]
