@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, relationship
 
 from .base import Base
+from .leave_request import LeaveRequest
 from .notification import Notification
 from .schedule import Schedule
 
@@ -50,6 +51,13 @@ class User(Base):
         "Schedule",
         back_populates="user",
         primaryjoin="and_(User.id == Schedule.user_id, Schedule.deleted_at.is_(None))",
+        cascade="all, delete-orphan",
+    )
+
+    leave_requests: Mapped[List["LeaveRequest"]] = relationship(
+        "LeaveRequest",
+        back_populates="employee",
+        foreign_keys="[LeaveRequest.employee_id]",
         cascade="all, delete-orphan",
     )
 

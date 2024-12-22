@@ -10,6 +10,7 @@ from app.features.employee_dashboard import router as employee_dashboard_router
 from app.features.employee_management import department_router as department_router
 from app.features.employee_management import position_router as position_router
 from app.features.employee_management import router as employee_router
+from app.features.leave import router as leave_router
 from app.features.notifications import router as notification_router
 from app.features.notifications import ws_router
 from app.features.notifications.events import register_notification_handlers
@@ -117,6 +118,9 @@ app.include_router(shift_trade_router, prefix="/trades", tags=["Shift Trade"])
 app.include_router(announcement_router, prefix="/announcements", tags=["Announcements"])
 
 app.include_router(notification_router, prefix="/notifications", tags=["Notifications"])
+
+app.include_router(leave_router, prefix="/leave", tags=["Leave Management"])
+
 
 app.mount("/ws", ws_router)
 
