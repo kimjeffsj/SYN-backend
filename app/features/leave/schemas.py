@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from app.models.leave_request import LeaveStatus, LeaveType
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class LeaveRequestBase(BaseModel):
@@ -48,8 +48,7 @@ class AdminResponse(BaseModel):
     comment: Optional[str]
     processed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RequestEmployee(BaseModel):
@@ -70,8 +69,7 @@ class LeaveRequestResponse(LeaveRequestBase):
     updated_at: Optional[datetime] = None
     admin_response: Optional[AdminResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LeaveRequestList(BaseModel):
@@ -81,5 +79,4 @@ class LeaveRequestList(BaseModel):
     total: int
     pending: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

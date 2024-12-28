@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class DashboardStats(BaseModel):
@@ -24,8 +24,7 @@ class DashboardResponse(BaseModel):
     employees: list[dict]
     announcements: list[dict]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DashboardStatsEmployee(BaseModel):
@@ -54,5 +53,4 @@ class EmployeeOverviewResponse(BaseModel):
     status: str
     currentShift: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
