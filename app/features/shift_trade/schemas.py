@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.models.shift_trade import ResponseStatus, TradeStatus, TradeType, UrgencyLevel
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ShiftTradeBase(BaseModel):
@@ -23,8 +23,7 @@ class ScheduleInfo(BaseModel):
     end_time: str
     type: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserInfo(BaseModel):
@@ -32,8 +31,7 @@ class UserInfo(BaseModel):
     name: str
     position: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TradeResponseInfo(BaseModel):
@@ -44,8 +42,7 @@ class TradeResponseInfo(BaseModel):
     status: ResponseStatus
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ShiftTradeResponse(ShiftTradeBase):
@@ -60,8 +57,7 @@ class ShiftTradeResponse(ShiftTradeBase):
     preferred_shift: Optional[ScheduleInfo] = None
     responses: List[TradeResponseInfo] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TradeResponseCreate(BaseModel):

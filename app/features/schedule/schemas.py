@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from app.models import ScheduleStatus, ShiftType
 from app.models.schedule_enums import RepeatFrequency
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScheduleBase(BaseModel):
@@ -51,8 +51,7 @@ class ScheduleResponse(ScheduleBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ScheduleSearchParams(BaseModel):
@@ -75,48 +74,11 @@ class RepeatingPattern(BaseModel):
     )
     end_date: datetime
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "type": "weekly",
-                "interval": 1,
-                "days": [0, 2, 4],  # Mon, Wed, Fri
-                "end_date": "2024-12-31T00:00:00Z",
-            }
-        }
-
 
 class BulkScheduleCreate(BaseModel):
     """Creating multiple schedules"""
 
-    schedules: List[ScheduleCreate] = Field(..., min_items=1)
-
-
-class Config:
-    json_schema_extra = {
-        "example": {
-            "schedules": [
-                {
-                    "start_time": "2024-12-05T22:40:16.268Z",
-                    "end_time": "2024-12-05T22:40:16.268Z",
-                    "shift_type": "morning",
-                    "description": "string",
-                    "is_repeating": False,
-                    "repeat_pattern": None,
-                    "user_id": 1,
-                },
-                {
-                    "start_time": "2024-12-05T22:40:16.268Z",
-                    "end_time": "2024-12-05T22:40:16.268Z",
-                    "shift_type": "evening",
-                    "description": "string",
-                    "is_repeating": False,
-                    "repeat_pattern": None,
-                    "user_id": 2,
-                },
-            ]
-        }
-    }
+    schedules: List[ScheduleCreate] = Field(..., min_length=1)
 
 
 class RepeatingScheduleCreate(BaseModel):
@@ -124,22 +86,3 @@ class RepeatingScheduleCreate(BaseModel):
 
     base_schedule: ScheduleCreate
     pattern: RepeatingPattern
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "base_schedule": {
-                    "user_id": 1,
-                    "start_time": "2024-12-01T09:00:00Z",
-                    "end_time": "2024-12-01T17:00:00Z",
-                    "shift_type": ShiftType.MORNING.value,
-                    "description": "Regular morning shift",
-                },
-                "pattern": {
-                    "type": RepeatFrequency.WEEKLY.value,
-                    "interval": 1,
-                    "days": [0, 2, 4],
-                    "end_date": "2024-12-31T00:00:00Z",
-                },
-            }
-        }

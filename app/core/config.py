@@ -25,8 +25,7 @@ class Settings(BaseSettings):
             raise ValueError("Database URL must be provided")
         return v
 
-    class Config:
-        env_file = ".env"
+    model_config = {"env_file": ".env"}
 
 
 # Create settings instance
