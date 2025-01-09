@@ -2,7 +2,6 @@ from typing import Optional
 
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
-from app.models import leave_request
 from app.models.leave_request import LeaveRequest, LeaveStatus
 from app.models.notification import Notification, NotificationPriority, NotificationType
 from app.models.schedule import Schedule

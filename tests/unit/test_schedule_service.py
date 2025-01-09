@@ -6,27 +6,6 @@ from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus, ShiftType
 from fastapi import HTTPException
 
-pytestmark = pytest.mark.asyncio
-
-
-@pytest.fixture
-def test_admin(db_session):
-    """Create test admin user"""
-    from app.core.security import get_password_hash
-    from app.models.user import User
-
-    admin = User(
-        email="admin@example.com",
-        full_name="Test Admin",
-        hashed_password=get_password_hash("adminpass123"),
-        role="admin",
-    )
-
-    db_session.add(admin)
-    db_session.commit()
-    db_session.refresh(admin)
-    return admin
-
 
 @pytest.fixture
 def basic_schedule_data(test_user):
