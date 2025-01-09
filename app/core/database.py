@@ -11,6 +11,7 @@ engine = create_engine(
     # check connection
     pool_pre_ping=True,
     echo=settings.DB_ECHO,
+    connect_args={"options": "-c timezone=UTC"},
 )
 
 # Create Session
