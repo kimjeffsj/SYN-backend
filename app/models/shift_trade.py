@@ -78,13 +78,13 @@ class ShiftTrade(Base):
 
     async def _check_giveaway_conflict(self, db_session) -> bool:
         """Check conflicts for giveaway requests"""
-        original_shift = await db_session.get(Schedule, self.original_shift_id)
+        original_shift = db_session.get(Schedule, self.original_shift_id)
         if not original_shift:
             return False
 
         # Check if the user has any existing shifts that conflict with the original shift
         existing_schedule = (
-            await db_session.query(Schedule)
+            db_session.query(Schedule)
             .filter(
                 Schedule.user_id == self.author_id,
                 Schedule.id != self.original_shift_id,
@@ -100,16 +100,16 @@ class ShiftTrade(Base):
 
     async def _check_trade_conflict(self, db_session) -> bool:
         """Check conflicts for trade requests"""
-        if not await self._check_giveaway_conflict(db_session):
+        if not self._check_giveaway_conflict(db_session):
             return False
 
         if self.preferred_shift_id:
-            preferred_shift = await db_session.get(Schedule, self.preferred_shift_id)
+            preferred_shift = db_session.get(Schedule, self.preferred_shift_id)
             if not preferred_shift:
                 return False
 
             existing_schedule = (
-                await db_session.query(Schedule)
+                db_session.query(Schedule)
                 .filter(
                     Schedule.user_id == self.author_id,
                     Schedule.id != self.preferred_shift_id,
@@ -157,12 +157,12 @@ class ShiftTradeResponse(Base):
 
     async def check_conflict(self, db_session) -> bool:
         """Check for response conflicts"""
-        trade_request = await db_session.get(ShiftTrade, self.trade_request_id)
+        trade_request = db_session.get(ShiftTrade, self.trade_request_id)
         if not trade_request:
             return False
 
         original_shift = trade_request.original_shift
-        return await self._check_schedule_conflict(
+        return self._check_schedule_conflict(
             db_session, self.respondent_id, original_shift
         )
 
@@ -171,7 +171,7 @@ class ShiftTradeResponse(Base):
     ) -> bool:
         """Helper method to check schedule conflicts"""
         existing_schedule = (
-            await db_session.query(Schedule)
+            db_session.query(Schedule)
             .filter(
                 Schedule.user_id == user_id,
                 Schedule.id != shift.id,
