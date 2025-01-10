@@ -103,6 +103,14 @@ class AnnouncementService:
         db: Session, announcement_data: AnnouncementCreate, created_by: int
     ):
         """Create a new announcement"""
+
+        # Validate request
+        if not announcement_data.title.strip():
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+
+        if announcement_data.priority not in ["normal", "high"]:
+            raise HTTPException(status_code=400, detail="Invalid priority value")
+
         try:
             announcement = Announcement(
                 **announcement_data.model_dump(), created_by=created_by
@@ -134,6 +142,7 @@ class AnnouncementService:
         db: Session, announcement_id: int, update_data: AnnouncementUpdate
     ):
         """Update an existing announcement"""
+
         announcement = (
             db.query(Announcement)
             .filter(
@@ -143,7 +152,10 @@ class AnnouncementService:
         )
 
         if not announcement:
-            return None
+            raise HTTPException(
+                status_code=404,
+                detail=f"Announcement with id {announcement_id} not found",
+            )
 
         for key, value in update_data.model_dump().items():
             setattr(announcement, key, value)
