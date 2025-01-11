@@ -150,11 +150,12 @@ class NotificationService:
             )
 
     @staticmethod
-    def handle_user_login(db: Session, user: User) -> dict:
+    async def handle_user_login(db: Session, user: User) -> dict:
         """Handle notifications when user logs in"""
         try:
-
-            notifications = NotificationService.get_pending_notifications(db, user.id)
+            notifications = await NotificationService.get_pending_notifications(
+                db, user.id
+            )
 
             summary = NotificationService.get_notification_summary(db, user.id)
 

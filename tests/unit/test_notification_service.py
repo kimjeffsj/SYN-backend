@@ -113,15 +113,18 @@ async def test_get_pending_notifications(db_session, test_user, notification_dat
     assert len(notifications) == 1  # Only recent notification
 
 
-def test_get_notification_summary(db_session, test_user, notification_data):
+@pytest.mark.asyncio
+async def test_get_notification_summary(db_session, test_user, notification_data):
     """Test notification summary retrieval"""
     # Create notifications of different types
     notification_data["user_id"] = test_user.id
-    NotificationService.create_notification(db_session, notification_data)
+    await NotificationService.create_notification(db_session, notification_data)
 
     announcement_notification = notification_data.copy()
     announcement_notification["type"] = NotificationType.ANNOUNCEMENT
-    NotificationService.create_notification(db_session, announcement_notification)
+    await NotificationService.create_notification(db_session, announcement_notification)
+
+    db_session.flush()
 
     summary = NotificationService.get_notification_summary(db_session, test_user.id)
 
@@ -130,13 +133,14 @@ def test_get_notification_summary(db_session, test_user, notification_data):
     assert NotificationType.ANNOUNCEMENT.value in summary["type_summary"]
 
 
-def test_handle_user_login(db_session, test_user, notification_data):
+@pytest.mark.asyncio
+async def test_handle_user_login(db_session, test_user, notification_data):
     """Test notification handling during user login"""
     notification_data["user_id"] = test_user.id
     notification_data["priority"] = NotificationPriority.HIGH
-    NotificationService.create_notification(db_session, notification_data)
+    await NotificationService.create_notification(db_session, notification_data)
 
-    login_data = NotificationService.handle_user_login(db_session, test_user)
+    login_data = await NotificationService.handle_user_login(db_session, test_user)
 
     assert len(login_data["notifications"]) == 1
     assert login_data["has_critical"] is True
