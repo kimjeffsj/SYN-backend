@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-from app.models.notification import Notification, NotificationStatus
+from app.models.notification import Notification, NotificationStatus, NotificationType
 from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
@@ -15,12 +15,12 @@ class NotificationService:
         try:
             notification = Notification(**notification_data)
             db.add(notification)
-            await db.commit()
-            await db.refresh(notification)
+            db.commit()
+            db.refresh(notification)
             return notification
 
         except Exception as e:
-            await db.rollback()
+            db.rollback()
             raise HTTPException(
                 status_code=500, detail=f"Could not create notification: {str(e)}"
             )
@@ -126,7 +126,7 @@ class NotificationService:
         )
 
     @staticmethod
-    async def get_notification_summary(db: Session, user_id: int) -> dict:
+    def get_notification_summary(db: Session, user_id: int) -> dict:
         """Get notification summary for dashboard"""
         try:
             base_query = db.query(Notification).filter(
@@ -136,7 +136,7 @@ class NotificationService:
             total_unread = base_query.filter(Notification.is_read == False).count()
 
             type_summary = {}
-            for ntype in Notification:
+            for ntype in NotificationType:
                 count = base_query.filter(
                     Notification.type == ntype, Notification.is_read == False
                 ).count()
@@ -153,12 +153,11 @@ class NotificationService:
     async def handle_user_login(db: Session, user: User) -> dict:
         """Handle notifications when user logs in"""
         try:
-
             notifications = await NotificationService.get_pending_notifications(
                 db, user.id
             )
 
-            summary = await NotificationService.get_notification_summary(db, user.id)
+            summary = NotificationService.get_notification_summary(db, user.id)
 
             notification_data = {
                 "notifications": [n.to_dict() for n in notifications],

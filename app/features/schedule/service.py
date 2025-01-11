@@ -110,13 +110,26 @@ class ScheduleService:
                 detail="End time must be after start time",
             )
 
+        has_conflict = ScheduleService._check_schedule_conflict(
+            db,
+            user_id=schedule_data["user_id"],
+            start_time=schedule_data["start_time"],
+            end_time=schedule_data["end_time"],
+        )
+
+        if has_conflict:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Schedule conflicts with existing schedule",
+            )
+
         try:
             schedule = Schedule(
                 **schedule_data, created_by=created_by, status=ScheduleStatus.CONFIRMED
             )
+
             db.add(schedule)
             db.commit()
-
             db.refresh(schedule)
 
             schedule = (
@@ -382,25 +395,28 @@ class ScheduleService:
         end_time: datetime,
         exclude_schedule_id: Optional[int] = None,
     ) -> bool:
-        """Check if schedule conflicts with existing schedules"""
+        """Check for schedule conflicts"""
         query = db.query(Schedule).filter(
             and_(
                 Schedule.user_id == user_id,
                 Schedule.status != ScheduleStatus.CANCELLED,
-                or_(
-                    and_(
-                        Schedule.start_time <= start_time,
-                        Schedule.end_time > start_time,
-                    ),
-                    and_(Schedule.start_time < end_time, Schedule.end_time >= end_time),
-                    and_(
-                        Schedule.start_time >= start_time, Schedule.end_time <= end_time
-                    ),
-                ),
+                Schedule.start_time < end_time,
+                Schedule.end_time > start_time,
             )
         )
 
         if exclude_schedule_id:
             query = query.filter(Schedule.id != exclude_schedule_id)
 
-        return query.first() is not None
+        existing = query.first()
+
+        if existing:
+            print(
+                f"""
+            Conflict detected:
+            New Schedule: {start_time} - {end_time}
+            Existing Schedule: {existing.start_time} - {existing.end_time}
+            """
+            )
+
+        return existing is not None

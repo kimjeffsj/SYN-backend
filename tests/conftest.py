@@ -68,3 +68,41 @@ def test_user(db_session):
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+@pytest.fixture
+def test_admin(db_session):
+    """Create test admin user"""
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
+    admin = User(
+        email="admin@example.com",
+        full_name="Test Admin",
+        hashed_password=get_password_hash("adminpass123"),
+        role="admin",
+    )
+
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+    return admin
+
+
+@pytest.fixture
+def test_employee2(db_session):
+    """Create another test employee for testing"""
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
+    employee = User(
+        email="employee2@example.com",
+        full_name="Test Employee 2",
+        hashed_password=get_password_hash("testpass123"),
+        role="employee",
+    )
+
+    db_session.add(employee)
+    db_session.commit()
+    db_session.refresh(employee)
+    return employee

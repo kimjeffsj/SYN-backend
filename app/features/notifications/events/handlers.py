@@ -189,7 +189,7 @@ async def handle_new_announcement_notification(event: Event, db: Session) -> Non
     except Exception as e:
         logger.error(f"Error in handle_new_announcement_notification: {str(e)}")
         if not isinstance(db.rollback, type(None)):
-            await db.rollback()
+            db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to process announcement notification: {str(e)}",

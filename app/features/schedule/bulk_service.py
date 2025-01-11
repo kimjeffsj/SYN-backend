@@ -56,7 +56,7 @@ class BulkScheduleService:
             ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Schedule conflict found for user {schedule['user.id']}",
+                    detail=f"Schedule conflict found for user {schedule['user_id']}",
                 )
 
         return True
@@ -122,8 +122,16 @@ class BulkScheduleService:
     ) -> List[Schedule]:
         """Create repeating schedules"""
         schedules = []
-        current_date = datetime.fromisoformat(base_schedule["start_time"])
-        end_date = datetime.fromisoformat(pattern["end_date"])
+        current_date = (
+            base_schedule["start_time"]
+            if isinstance(base_schedule["start_time"], datetime)
+            else datetime.fromisoformat(base_schedule["start_time"])
+        )
+        end_date = (
+            pattern["end_date"]
+            if isinstance(pattern["end_date"], datetime)
+            else datetime.fromisoformat(pattern["end_date"])
+        )
 
         while current_date <= end_date:
             if (

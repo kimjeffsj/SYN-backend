@@ -6,6 +6,8 @@ __pycache__/
 .Python
 .env
 .coverage
+htmlcov/
+.pytest_cache
 
 # IDE
 .idea/

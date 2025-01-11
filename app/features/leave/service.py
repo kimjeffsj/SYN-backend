@@ -1,10 +1,15 @@
+from datetime import datetime
 from typing import Optional
 
 from app.core.events import Event, event_bus
 from app.features.notifications.events.types import NotificationEventType
-from app.models import leave_request
 from app.models.leave_request import LeaveRequest, LeaveStatus
-from app.models.notification import Notification, NotificationPriority, NotificationType
+from app.models.notification import (
+    Notification,
+    NotificationPriority,
+    NotificationStatus,
+    NotificationType,
+)
 from app.models.schedule import Schedule
 from app.models.schedule_enums import ScheduleStatus
 from app.models.user import User
@@ -89,19 +94,21 @@ class LeaveRequestService:
         db: Session, request_data: dict, employee_id: int
     ) -> LeaveRequest:
         """Create a new leave request"""
-        employee = (
-            db.query(Schedule)
-            .filter(
-                Schedule.user_id == employee_id,
-                Schedule.start_time <= request_data["start_date"],
-                Schedule.end_time >= request_data["end_date"],
+        # Validate before create
+        if request_data["start_date"].date() < datetime.now().date():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Start date cannot be in the past",
             )
-            .all()
-        )
 
-        leave_request = LeaveRequest(employee_id=employee_id, **request_data)
+        if request_data["end_date"] < request_data["start_date"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="End date must be after start date",
+            )
 
         try:
+            leave_request = LeaveRequest(employee_id=employee_id, **request_data)
             db.add(leave_request)
             db.commit()
             db.refresh(leave_request)
@@ -112,7 +119,9 @@ class LeaveRequestService:
                 title="New Leave Request",
                 message=f"New leave request from {leave_request.employee.full_name}",
                 priority=NotificationPriority.HIGH,
+                status=NotificationStatus.PENDING,
                 data=LeaveRequestService._format_leave_request(leave_request),
+                created_at=datetime.now(),
             )
 
             # Find admin and create notifications
@@ -130,7 +139,6 @@ class LeaveRequestService:
                         "leave_request": LeaveRequestService._format_leave_request(
                             leave_request
                         ),
-                        "notification": notification.to_dict(),
                     },
                 )
             )
@@ -198,6 +206,7 @@ class LeaveRequestService:
                 title=f"Leave Request {status.capitalize()}",
                 message=f"Your leave request has been {status.lower()}",
                 priority=NotificationPriority.HIGH,
+                status=NotificationStatus.SENT,
                 data=LeaveRequestService._format_leave_request(leave_request),
             )
 
