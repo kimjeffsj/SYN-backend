@@ -11,7 +11,7 @@ class EmployeeDashboardService:
     @staticmethod
     async def get_dashboard_data(db: Session, user_id: int):
         """Get employee's dashboard data"""
-        user = db.query(User).get(user_id)
+        user = db.get(User, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
@@ -64,11 +64,21 @@ class EmployeeDashboardService:
             db.query(Schedule)
             .filter(
                 Schedule.user_id == user_id,
-                Schedule.start_time > today,
+                Schedule.start_time > today_end,
                 Schedule.status == ScheduleStatus.CONFIRMED,
             )
             .count()
         )
+
+        # Schedule formatting
+        def format_schedule(schedule):
+            return {
+                "id": schedule.id,
+                "start_time": schedule.start_time.isoformat(),
+                "end_time": schedule.end_time.isoformat(),
+                "shift_type": schedule.shift_type.value,
+                "status": schedule.status.value,
+            }
 
         return {
             "employee": {
@@ -76,6 +86,8 @@ class EmployeeDashboardService:
                 "name": user.full_name,
                 "position": user.position,
                 "department": user.department,
+                "is_active": user.is_active,
+                "is_on_leave": user.is_on_leave,
             },
             "stats": {
                 "totalHours": round(total_hours, 1),
@@ -83,6 +95,8 @@ class EmployeeDashboardService:
                 "upcomingShifts": upcoming_shifts,
                 "leaveBalance": user.leave_balance,
             },
-            "todaySchedule": today_schedule,
-            "weeklySchedule": weekly_schedule,
+            "todaySchedule": (
+                format_schedule(today_schedule) if today_schedule else None
+            ),
+            "weeklySchedule": [format_schedule(s) for s in weekly_schedule],
         }
